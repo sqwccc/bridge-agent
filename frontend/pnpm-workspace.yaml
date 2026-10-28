@@ -1,0 +1,3 @@
+# pnpm 11 默认阻止依赖安装脚本；MSW 的官方安装脚本仅用于初始化 Mock Service Worker 资源。
+allowBuilds:
+  msw: true

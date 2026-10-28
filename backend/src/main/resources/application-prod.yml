@@ -1,0 +1,16 @@
+spring:
+  datasource:
+    url: ${APP_DB_URL}
+    username: ${APP_DB_USER}
+    password: ${APP_DB_PASSWORD}
+server:
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        secure: true
+bridgemind:
+  source:
+    url: ${SOURCE_DB_URL}
+    username: ${SOURCE_DB_USER}
+    password: ${SOURCE_DB_PASSWORD}

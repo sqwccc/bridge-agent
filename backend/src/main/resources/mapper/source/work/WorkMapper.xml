@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.bridgemind.work.mapper.WorkMapper">
+    <sql id="table">
+        <choose>
+            <when test="kind == 'patrols'">dwd_ql_xjjl_inc</when>
+            <when test="kind == 'defects'">dwd_ql_jg_jcbhxx_all</when>
+            <otherwise>dwd_ql_jg_yhwxxx_all</otherwise>
+        </choose>
+    </sql>
+    <sql id="bridgeColumn">
+        <choose>
+            <when test="kind == 'patrols'">xjdx</when>
+            <otherwise>qlbh</otherwise>
+        </choose>
+    </sql>
+    <!-- 候选主键可按桥梁缩小；版本选择必须重新读取该主键所有版本，再核对最新归属。 -->
+    <sql id="base">
+        <include refid="com.bridgemind.bridge.mapper.BridgeMapper.base"/>,
+        unique_keys AS (
+        SELECT sscsdm,bridge_key,min(bridge_id) AS bridge_id FROM bridge_keys GROUP BY 1,2 HAVING count(*)=1
+        ), target_keys AS (
+        SELECT * FROM unique_keys WHERE
+        <choose>
+            <when test="_parameter.containsKey('bridgeIds')">
+                <choose>
+                    <when test="bridgeIds.size() > 0">bridge_id IN <foreach collection="bridgeIds" item="bid" open="(" separator="," close=")">#{bid}</foreach></when>
+                    <otherwise>1=0</otherwise>
+                </choose>
+            </when>
+            <otherwise>bridge_id=#{bridgeId}</otherwise>
+        </choose>
+        AND EXISTS(SELECT 1 FROM bridge_active b WHERE b.qlid=unique_keys.bridge_id)
+        ), candidate_keys AS MATERIALIZED (
+        SELECT DISTINCT r.sscsdm,r.bsm FROM
+        <include refid="com.bridgemind.work.mapper.WorkMapper.table"/>
+        r JOIN target_keys k
+        ON ARRAY[k.sscsdm,k.bridge_key]::text[]=ARRAY[r.sscsdm,r.<include refid="com.bridgemind.work.mapper.WorkMapper.bridgeColumn"/>]::text[]
+        WHERE nullif(trim(r.bsm),'') IS NOT NULL
+        <if test="_parameter.containsKey('recordId')">AND r.bsm=#{recordId}</if>
+        ), candidate_versions AS MATERIALIZED (
+        SELECT r.* FROM
+        <include refid="com.bridgemind.work.mapper.WorkMapper.table"/>
+        r JOIN candidate_keys c
+        ON c.sscsdm=r.sscsdm AND c.bsm=r.bsm
+        <if test="_parameter.containsKey('recordId')">WHERE r.bsm=#{recordId}</if>
+        ), source_latest AS MATERIALIZED (
+        SELECT DISTINCT ON(r.sscsdm,r.bsm) r.* FROM candidate_versions r
+        ORDER BY r.sscsdm,r.bsm,r.tbsj DESC NULLS LAST,(r.sjtbzt='D') DESC NULLS LAST,
+        <if test="kind != 'patrols'">r.extract_time DESC NULLS LAST,</if>to_jsonb(r)::text DESC
+        ), records AS (
+        SELECT r.bsm AS id,#{kind}::text AS kind,r.sscsdm AS city_code,k.bridge_id,b.qlmc AS bridge_name,
+        r.
+        <include refid="com.bridgemind.work.mapper.WorkMapper.bridgeColumn"/>
+        AS source_bridge_key,r.tbsj AS source_updated_at,r.sjtbzt AS sync_status,r.bz AS note,
+        <choose>
+            <when test="kind == 'patrols'">
+                r.jcrq AS occurred_at,r.rcxcbsm AS task_id,NULL::text AS code,r.jcdy AS unit,r.jcxm AS item_text,r.jcff
+                AS method,
+                r.jcnr AS content,r.jcjg AS result,r.czyh AS hazard,NULL::integer AS zone,NULL::integer AS item,
+                NULL::integer AS damage_type,NULL::integer AS origin,NULL::integer AS severity,NULL::integer AS status,
+                NULL::text AS description,NULL::text AS quantity,NULL::text AS location,NULL::integer AS
+                maintenance_type,
+                NULL::date AS rectified_date,r.fj AS attachment_raw
+            </when>
+            <when test="kind == 'defects'">
+                r.sbrq::timestamp AS occurred_at,NULL::text AS task_id,r.bhbh AS code,NULL::text AS unit,NULL::text AS
+                item_text,
+                NULL::text AS method,NULL::text AS content,NULL::text AS result,NULL::text AS hazard,r.qlbw AS
+                zone,r.xjx AS item,
+                r.shlx AS damage_type,r.bhly AS origin,r.shcd AS severity,r.clzt AS status,r.bhms AS description,r.dlms
+                AS quantity,
+                r.wzms AS location,NULL::integer AS maintenance_type,NULL::date AS rectified_date,r.bhtp AS
+                attachment_raw
+            </when>
+            <otherwise>
+                r.yhrq::timestamp AS occurred_at,NULL::text AS task_id,r.bhbh AS code,r.yhdw AS unit,NULL::text AS
+                item_text,
+                NULL::text AS method,NULL::text AS content,NULL::text AS result,NULL::text AS hazard,NULL::integer AS
+                zone,
+                NULL::integer AS item,NULL::integer AS damage_type,NULL::integer AS origin,NULL::integer AS severity,
+                r.wtzgzt AS status,NULL::text AS description,NULL::text AS quantity,NULL::text AS location,r.yhlx AS
+                maintenance_type,
+                r.wtzgrq AS rectified_date,r.wxhzp AS attachment_raw
+            </otherwise>
+        </choose>
+        FROM source_latest r JOIN target_keys k
+        ON ARRAY[k.sscsdm,k.bridge_key]::text[]=ARRAY[r.sscsdm,r.<include refid="com.bridgemind.work.mapper.WorkMapper.bridgeColumn"/>]::text[]
+        JOIN bridge_active b ON b.qlid=k.bridge_id WHERE coalesce(r.sjtbzt,'')!='D'
+        )
+    </sql>
+    <sql id="issues">
+        (r.occurred_at IS NULL OR r.occurred_at::date>(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date
+        OR r.source_updated_at IS NULL OR coalesce(r.sync_status,'') NOT IN ('','I','U')
+        <choose>
+            <when test="kind == 'patrols'">OR nullif(trim(r.result),'') IS NULL</when>
+            <otherwise>
+                OR nullif(trim(r.code),'') IS NULL OR r.status IS NULL OR r.status NOT BETWEEN 1 AND 6
+                <choose>
+                    <when test="kind == 'defects'">
+                        OR r.zone IS NULL OR r.zone NOT IN (1,2,3,99) OR r.item IS NULL OR (r.item NOT BETWEEN 1 AND 9
+                        AND r.item!=99)
+                        OR r.damage_type IS NULL OR (r.damage_type NOT BETWEEN 1 AND 35 AND r.damage_type!=99)
+                        OR r.origin IS NULL OR r.origin NOT BETWEEN 1 AND 3 OR r.severity IS NULL OR r.severity NOT
+                        BETWEEN 1 AND 5
+                        OR nullif(trim(r.description),'') IS NULL
+                    </when>
+                    <otherwise>OR r.maintenance_type IS NULL OR r.maintenance_type NOT BETWEEN 1 AND 3 OR
+                        r.rectified_date&lt;r.occurred_at::date
+                    </otherwise>
+                </choose>
+            </otherwise>
+        </choose>
+        )
+    </sql>
+    <sql id="filter">
+        <where>
+            <if test="filter.from != null">AND r.occurred_at&gt;=#{filter.from}::date</if>
+            <if test="filter.to != null">AND r.occurred_at&lt;(#{filter.to}::date+1)</if>
+            <if test="filter.q != ''">AND position(lower(#{filter.q}) in lower(concat_ws('
+                ',r.id,r.code,r.item_text,r.content,r.result,r.hazard,r.description,r.location,r.note)))&gt;0
+            </if>
+            <if test="filter.defectCode != ''">AND r.code=#{filter.defectCode}</if>
+            <if test="filter.status != ''">
+                <choose>
+                    <when test="filter.status == 'missing'">AND r.status IS NULL</when>
+                    <otherwise>AND r.status::text=#{filter.status}</otherwise>
+                </choose>
+            </if>
+            <if test="filter.zone != ''">
+                <choose>
+                    <when test="filter.zone == 'missing'">AND r.zone IS NULL</when>
+                    <otherwise>AND r.zone::text=#{filter.zone}</otherwise>
+                </choose>
+            </if>
+            <if test="filter.damageType != ''">
+                <choose>
+                    <when test="filter.damageType == 'missing'">AND r.damage_type IS NULL</when>
+                    <otherwise>AND r.damage_type::text=#{filter.damageType}</otherwise>
+                </choose>
+            </if>
+            <if test="filter.severity != ''">
+                <choose>
+                    <when test="filter.severity == 'missing'">AND r.severity IS NULL</when>
+                    <otherwise>AND r.severity::text=#{filter.severity}</otherwise>
+                </choose>
+            </if>
+            <if test="filter.maintenanceType != ''">
+                <choose>
+                    <when test="filter.maintenanceType == 'missing'">AND r.maintenance_type IS NULL</when>
+                    <otherwise>AND r.maintenance_type::text=#{filter.maintenanceType}</otherwise>
+                </choose>
+            </if>
+            <if test="filter.issuesOnly">AND
+                <include refid="com.bridgemind.work.mapper.WorkMapper.issues"/>
+            </if>
+        </where>
+    </sql>
+    <select id="list" resultType="com.bridgemind.work.model.WorkRecord">
+        <include refid="com.bridgemind.work.mapper.WorkMapper.base"/>
+        SELECT<include refid="com.bridgemind.work.mapper.WorkMapper.fields"/>,count(*) OVER() AS matching_total FROM records r
+        <include refid="com.bridgemind.work.mapper.WorkMapper.filter"/>
+        ORDER BY r.occurred_at DESC NULLS LAST,r.id LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="count" resultType="long">
+        <include refid="com.bridgemind.work.mapper.WorkMapper.base"/>
+        SELECT count(*) FROM records r
+        <include refid="com.bridgemind.work.mapper.WorkMapper.filter"/>
+    </select>
+    <select id="find" resultType="com.bridgemind.work.model.WorkRecord">
+        <include refid="com.bridgemind.work.mapper.WorkMapper.base"/>
+        SELECT<include refid="com.bridgemind.work.mapper.WorkMapper.fields"/>,NULL::bigint AS matching_total FROM records r WHERE id=#{recordId}
+    </select>
+    <sql id="fields">
+        r.id,r.kind,r.city_code,r.bridge_id,r.bridge_name,r.source_bridge_key,r.occurred_at,r.source_updated_at,r.sync_status,r.task_id,
+        r.code,r.unit,r.item_text,r.method,r.content,r.result,r.hazard,r.zone,r.item,r.damage_type,r.origin,r.severity,r.status,
+        r.description,r.quantity,r.location,r.maintenance_type,r.rectified_date,r.note,r.attachment_raw
+    </sql>
+</mapper>

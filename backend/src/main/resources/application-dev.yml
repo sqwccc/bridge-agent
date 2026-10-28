@@ -1,0 +1,11 @@
+spring:
+  datasource:
+    url: ${APP_DB_URL:jdbc:postgresql://localhost:5432/bridgemind}
+    username: ${APP_DB_USER:bridgemind_app}
+    password: ${APP_DB_PASSWORD:bridgemind_dev_app}
+bridgemind:
+  preview-enabled: ${PREVIEW_ENABLED:true}
+  source:
+    url: ${SOURCE_DB_URL:jdbc:postgresql://localhost:5432/bridgemind_source}
+    username: ${SOURCE_DB_USER:bridgemind_reader}
+    password: ${SOURCE_DB_PASSWORD:bridgemind_dev_reader}

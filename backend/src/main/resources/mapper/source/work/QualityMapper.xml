@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.bridgemind.work.mapper.QualityMapper">
+    <!-- 仅核查当前有设备桥梁关联的原始行，保留这些桥梁的历史版本和删除记录。 -->
+    <sql id="raw">
+        SELECT r.bsm AS id,r.sscsdm AS city_code,r.
+        <include refid="com.bridgemind.work.mapper.WorkMapper.bridgeColumn"/>
+        AS source_bridge_key,
+        r.tbsj AS source_updated_at,r.sjtbzt AS sync_status,
+        <choose>
+            <when test="kind == 'patrols'">
+                r.jcrq AS occurred_at,nullif(trim(r.jcjg),'') IS NULL AS missing_details,false AS unknown_codes,false AS
+                earlier_rectification
+            </when>
+            <when test="kind == 'defects'">
+                r.sbrq::timestamp AS occurred_at,(nullif(trim(r.bhms),'') IS NULL OR nullif(trim(r.bhbh),'') IS NULL OR
+                r.qlbw IS NULL
+                OR r.xjx IS NULL OR r.shlx IS NULL OR r.bhly IS NULL OR r.shcd IS NULL OR r.clzt IS NULL) AS
+                missing_details,
+                (r.qlbw NOT IN(1,2,3,99) OR (r.xjx NOT BETWEEN 1 AND 9 AND r.xjx!=99)
+                OR (r.shlx NOT BETWEEN 1 AND 35 AND r.shlx!=99) OR r.bhly NOT BETWEEN 1 AND 3
+                OR r.shcd NOT BETWEEN 1 AND 5 OR r.clzt NOT BETWEEN 1 AND 6) IS TRUE AS unknown_codes,false AS
+                earlier_rectification
+            </when>
+            <otherwise>
+                r.yhrq::timestamp AS occurred_at,(nullif(trim(r.bhbh),'') IS NULL OR r.wtzgzt IS NULL OR r.yhlx IS NULL)
+                AS missing_details,
+                (r.yhlx NOT BETWEEN 1 AND 3 OR r.wtzgzt NOT BETWEEN 1 AND 6) IS TRUE AS unknown_codes,
+                (r.wtzgrq&lt;r.yhrq) IS TRUE AS earlier_rectification
+            </otherwise>
+        </choose>
+        FROM
+        <include refid="com.bridgemind.work.mapper.WorkMapper.table"/>
+        r
+        WHERE EXISTS(SELECT 1 FROM bridge_keys k JOIN bridge_active b ON b.qlid=k.bridge_id
+        WHERE ARRAY[k.sscsdm,k.bridge_key]::text[]=ARRAY[r.sscsdm,r.<include refid="com.bridgemind.work.mapper.WorkMapper.bridgeColumn"/>]::text[])
+        <if test="city != ''">AND r.sscsdm=#{city}</if>
+    </sql>
+    <sql id="base">
+        <include refid="com.bridgemind.bridge.mapper.BridgeMapper.base"/>,
+        quality_keys AS (SELECT sscsdm,bridge_key,min(bridge_id) AS bridge_id,count(*) AS matches FROM bridge_keys GROUP
+        BY 1,2),
+        raw AS NOT MATERIALIZED (<include refid="raw"/>),
+        audited AS (
+        SELECT r.*,CASE WHEN k.matches=1 THEN k.bridge_id END AS bridge_id,k.matches,
+        concat_ws(',',
+        CASE WHEN nullif(trim(r.id),'') IS NULL OR nullif(trim(r.city_code),'') IS NULL THEN 'MISSING_IDENTIFIER' END,
+        CASE WHEN nullif(trim(r.source_bridge_key),'') IS NULL THEN 'MISSING_BRIDGE_KEY' END,
+        CASE WHEN k.matches IS NULL THEN 'UNMATCHED_BRIDGE' END,CASE WHEN k.matches&gt;1 THEN 'AMBIGUOUS_BRIDGE' END,
+        CASE WHEN r.occurred_at IS NULL THEN 'MISSING_DATE' END,
+        CASE WHEN r.occurred_at::date&gt;(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date THEN 'FUTURE_DATE' END,
+        CASE WHEN r.source_updated_at IS NULL THEN 'MISSING_SYNC_TIME' END,
+        CASE WHEN r.missing_details THEN 'MISSING_DETAILS' END,CASE WHEN r.unknown_codes THEN 'UNKNOWN_CODE' END,
+        CASE WHEN coalesce(r.sync_status,'') NOT IN ('','I','U','D') THEN 'UNKNOWN_SYNC_STATUS' END,
+        CASE WHEN r.earlier_rectification THEN 'RECTIFIED_BEFORE_MAINTENANCE' END
+        ) AS issue_codes
+        FROM raw r LEFT JOIN quality_keys k ON
+        ARRAY[k.sscsdm,k.bridge_key]::text[]=ARRAY[r.city_code,r.source_bridge_key]::text[]
+        )
+    </sql>
+    <select id="profile" resultType="com.bridgemind.work.model.QualityProfile">
+        <include refid="base"/>, key_stats AS (
+        SELECT count(*) AS distinct_keys,coalesce(sum(n-1),0)::bigint AS duplicate_excess FROM (
+        SELECT city_code,id,count(*) AS n FROM raw WHERE nullif(trim(id),'') IS NOT NULL AND nullif(trim(city_code),'')
+        IS NOT NULL GROUP BY 1,2
+        ) grouped
+        )
+        SELECT count(*) AS raw_rows,(SELECT distinct_keys FROM key_stats),(SELECT duplicate_excess FROM key_stats),
+        count(*) FILTER(WHERE nullif(trim(id),'') IS NULL OR nullif(trim(city_code),'') IS NULL) AS missing_identifiers,
+        count(*) FILTER(WHERE sync_status='D') AS deleted_rows,count(*) FILTER(WHERE matches=1) AS mapped_rows,
+        count(*) FILTER(WHERE matches IS NULL) AS unmatched_rows,count(*) FILTER(WHERE matches&gt;1) AS ambiguous_rows,
+        count(*) FILTER(WHERE nullif(trim(source_bridge_key),'') IS NULL) AS missing_bridge_keys,
+        count(*) FILTER(WHERE occurred_at IS NULL) AS missing_dates,
+        count(*) FILTER(WHERE occurred_at::date&gt;(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date) AS
+        future_dates,
+        count(*) FILTER(WHERE source_updated_at IS NULL) AS missing_sync_times,
+        count(*) FILTER(WHERE missing_details) AS missing_details,
+        count(*) FILTER(WHERE unknown_codes) AS unknown_codes,
+        count(*) FILTER(WHERE coalesce(sync_status,'') NOT IN ('','I','U','D')) AS unknown_sync_status,
+        count(*) FILTER(WHERE earlier_rectification) AS earlier_rectification,
+        min(occurred_at) AS first_date,max(occurred_at) AS last_date,max(source_updated_at) AS latest_sync
+        FROM audited
+    </select>
+    <sql id="issueFilter">
+        WHERE r.issue_codes!=''
+        <if test="issue != ''">AND #{issue}=ANY(string_to_array(r.issue_codes,','))</if>
+    </sql>
+    <select id="issues" resultType="com.bridgemind.work.model.QualityIssue">
+        <include refid="base"/>
+        SELECT
+        r.id,r.city_code,r.source_bridge_key,r.bridge_id,r.occurred_at,r.source_updated_at,r.sync_status,r.issue_codes,count(*)
+        OVER() AS matching_total
+        FROM audited r
+        <include refid="issueFilter"/>
+        ORDER BY r.occurred_at DESC NULLS LAST,r.city_code,r.id,r.source_bridge_key,r.source_updated_at DESC NULLS
+        LAST,r.sync_status
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="issueCount" resultType="long">
+        <include refid="base"/>
+        SELECT count(*) FROM audited r
+        <include refid="issueFilter"/>
+    </select>
+    <select id="relations" resultType="com.bridgemind.work.model.QualityRelations">
+        <include refid="com.bridgemind.bridge.mapper.BridgeMapper.base"/>,
+        unique_keys AS (SELECT sscsdm,bridge_key,min(bridge_id) AS bridge_id FROM bridge_keys GROUP BY 1,2 HAVING
+        count(*)=1 AND min(bridge_id) IN(SELECT qlid FROM bridge_active)),
+        defect_latest AS (
+        SELECT DISTINCT ON(sscsdm,bsm) * FROM dwd_ql_jg_jcbhxx_all r WHERE nullif(trim(bsm),'') IS NOT NULL
+        <if test="city != ''">AND sscsdm=#{city}</if>
+        ORDER BY sscsdm,bsm,tbsj DESC NULLS LAST,(sjtbzt='D') DESC NULLS LAST,extract_time DESC NULLS
+        LAST,to_jsonb(r)::text DESC
+        ), maintenance_latest AS (
+        SELECT DISTINCT ON(sscsdm,bsm) * FROM dwd_ql_jg_yhwxxx_all r WHERE nullif(trim(bsm),'') IS NOT NULL
+        <if test="city != ''">AND sscsdm=#{city}</if>
+        ORDER BY sscsdm,bsm,tbsj DESC NULLS LAST,(sjtbzt='D') DESC NULLS LAST,extract_time DESC NULLS
+        LAST,to_jsonb(r)::text DESC
+        ), defect_codes AS (
+        SELECT d.sscsdm,k.bridge_id,d.bhbh,count(*) AS matches FROM defect_latest d JOIN unique_keys k
+        ON ARRAY[k.sscsdm,k.bridge_key]::text[]=ARRAY[d.sscsdm,d.qlbh]::text[]
+        WHERE coalesce(d.sjtbzt,'')!='D' AND nullif(trim(d.bhbh),'') IS NOT NULL GROUP BY 1,2,3
+        ), maintenance_refs AS (
+        SELECT m.*,k.bridge_id FROM maintenance_latest m JOIN unique_keys k
+        ON ARRAY[k.sscsdm,k.bridge_key]::text[]=ARRAY[m.sscsdm,m.qlbh]::text[] WHERE coalesce(m.sjtbzt,'')!='D'
+        )
+        SELECT (SELECT count(*) FROM defect_codes WHERE matches&gt;1) AS duplicate_defect_codes,
+        count(*) FILTER(WHERE d.matches=1) AS unique_maintenance,
+        count(*) FILTER(WHERE d.matches IS NULL AND nullif(trim(m.bhbh),'') IS NOT NULL) AS unmatched_maintenance,
+        count(*) FILTER(WHERE d.matches&gt;1) AS ambiguous_maintenance,
+        count(*) FILTER(WHERE nullif(trim(m.bhbh),'') IS NULL) AS missing_reference_keys
+        FROM maintenance_refs m LEFT JOIN defect_codes d ON (d.sscsdm,d.bridge_id,d.bhbh)=(m.sscsdm,m.bridge_id,m.bhbh)
+    </select>
+</mapper>

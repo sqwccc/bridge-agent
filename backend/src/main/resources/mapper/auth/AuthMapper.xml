@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.bridgemind.auth.mapper.AuthMapper">
+    <select id="find" resultType="com.bridgemind.auth.model.entity.UserEntity">
+        SELECT id,username,password_hash,display_name,enabled FROM bm_user WHERE username=#{username}
+    </select>
+    <insert id="create">INSERT INTO bm_user(username,password_hash,display_name) VALUES
+        (#{username},#{hash},#{displayName})
+    </insert>
+</mapper>

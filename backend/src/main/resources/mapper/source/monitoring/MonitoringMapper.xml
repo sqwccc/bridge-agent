@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.bridgemind.monitoring.mapper.MonitoringMapper">
+    <!-- 地市内的设施编号精确对应桥梁 ID 或桥梁编号。多候选关系剔除，禁止猜测归属。 -->
+    <sql id="pointBridge">
+        <include refid="com.bridgemind.bridge.mapper.BridgeMapper.base"/>
+    </sql>
+    <select id="points" resultType="com.bridgemind.monitoring.model.resp.MonitorPointResponse">
+        <include refid="pointBridge"/>
+        SELECT DISTINCT p.bsm AS point_id,p.dwmc AS point_name,d.bsm AS device_id,d.sbmc AS device_name,d.jczb AS
+        metric,NULL::text AS unit,
+        d.sblx AS device_type,d.sbxh AS device_model,d.sbzt AS source_device_status,d.sjtbsj AS source_updated_at
+        FROM point_bridge p JOIN device_source d ON d.dwbsm=p.bsm AND d.sscsdm=p.sscsdm
+        WHERE p.bridge_id=#{id} ORDER BY p.dwmc,d.bsm
+    </select>
+    <select id="thresholds" resultType="com.bridgemind.monitoring.model.resp.ThresholdResponse">
+        <include refid="pointBridge"/>, threshold_latest AS (
+        SELECT DISTINCT ON(sscsdm,bsm) * FROM dwd_ql_jc_jcxyz_inc t
+        WHERE nullif(trim(bsm),'') IS NOT NULL
+        ORDER BY sscsdm,bsm,sjtbsj DESC NULLS LAST,(sjtbzt='D') DESC NULLS LAST,to_jsonb(t)::text DESC
+        )
+        SELECT t.bsm AS id,p.bsm AS point_id,d.bsm AS device_id,t.jczb AS metric,t.sblx AS device_type,t.jcjb AS level,
+        t.yzsx AS upper,t.yzxx AS lower,t.bjyz AS legacy_threshold,t.bz AS note,t.sjtbsj AS source_updated_at
+        FROM point_bridge p JOIN device_source d ON ARRAY[p.sscsdm,p.bsm]::text[]=ARRAY[d.sscsdm,d.dwbsm]::text[]
+        JOIN threshold_latest t ON ARRAY[t.sscsdm,t.sbbsm,t.jczb]::text[]=ARRAY[d.sscsdm,d.bsm,d.jczb]::text[]
+        WHERE p.bridge_id=#{id} AND coalesce(t.sjtbzt,'')!='D'
+        <if test="point != null and point != ''">AND p.bsm=#{point}</if>
+        <if test="device != null and device != ''">AND d.bsm=#{device}</if>
+        <if test="metric != null and metric != ''">AND t.jczb=#{metric}</if>
+        ORDER BY p.bsm,d.bsm,t.jczb,t.jcjb,t.yzxx,t.yzsx,t.bsm
+    </select>
+    <select id="samples" resultType="com.bridgemind.monitoring.model.resp.SampleResponse">
+        <include refid="pointBridge"/>
+        SELECT s.jccjsj AS time,s.jcz AS raw_value,NULL::float8 AS value
+        FROM dwd_ql_jc_jcz_inc s
+        WHERE s.dwbsm=#{point} AND s.sbbsm=#{device} AND s.jczb IS NOT DISTINCT FROM #{metric}
+        AND s.jccjsj BETWEEN #{from} AND #{to} AND coalesce(s.sjtbzt,'') != 'D'
+        AND EXISTS(SELECT 1 FROM point_bridge p WHERE p.bridge_id=#{id} AND p.bsm=s.dwbsm AND p.sscsdm=s.sscsdm)
+        ORDER BY s.jccjsj,s.bsm LIMIT 2001
+    </select>
+    <!-- Called only with server-validated scope; retain city isolation even when IDs collide. -->
+    <select id="samplesForPoint" resultType="com.bridgemind.monitoring.model.resp.SampleResponse">
+        SELECT s.jccjsj AS time,s.jcz AS raw_value,NULL::float8 AS value
+        FROM dwd_ql_jc_jcz_inc s
+        WHERE s.sscsdm=#{city} AND s.dwbsm=#{point} AND s.sbbsm=#{device}
+        AND s.jczb IS NOT DISTINCT FROM #{metric}
+        AND s.jccjsj BETWEEN #{from} AND #{to} AND coalesce(s.sjtbzt,'') != 'D'
+        ORDER BY s.jccjsj,s.bsm LIMIT 2001
+    </select>
+    <select id="thresholdsForPoints" resultType="com.bridgemind.monitoring.model.resp.ThresholdResponse">
+        WITH selected_points(point_id,device_id,metric) AS (
+        VALUES
+        <foreach collection="points" item="p" separator=",">
+            (#{p.pointId}::text,#{p.deviceId}::text,#{p.metric}::text)
+        </foreach>
+        ), threshold_latest AS (
+        SELECT DISTINCT ON(sscsdm,bsm) * FROM dwd_ql_jc_jcxyz_inc t
+        WHERE sscsdm=#{city} AND nullif(trim(bsm),'') IS NOT NULL
+        ORDER BY sscsdm,bsm,sjtbsj DESC NULLS LAST,(sjtbzt='D') DESC NULLS LAST,to_jsonb(t)::text DESC
+        )
+        SELECT t.bsm AS id,p.point_id,p.device_id,t.jczb AS metric,t.sblx AS device_type,t.jcjb AS level,
+        t.yzsx AS upper,t.yzxx AS lower,t.bjyz AS legacy_threshold,t.bz AS note,t.sjtbsj AS source_updated_at
+        FROM threshold_latest t JOIN selected_points p
+        ON t.sbbsm=p.device_id AND t.jczb IS NOT DISTINCT FROM p.metric
+        WHERE coalesce(t.sjtbzt,'')!='D'
+        ORDER BY p.point_id,p.device_id,t.jczb,t.jcjb,t.yzxx,t.yzsx,t.bsm
+    </select>
+</mapper>

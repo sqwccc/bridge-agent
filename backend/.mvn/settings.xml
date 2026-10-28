@@ -1,0 +1,4 @@
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0">
+  <!-- 避免继承本机旧项目中指向已不存在盘符的仓库配置。 -->
+  <localRepository>${user.home}/.m2/repository</localRepository>
+</settings>

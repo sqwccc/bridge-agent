@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.bridgemind.bridge.mapper.BridgeMapper">
+    <!-- 先在完整有效底数上判定唯一归属，再限定有设备桥梁；不能提前过滤而消除真实歧义。 -->
+    <sql id="base">
+        WITH bridge_latest AS (
+        SELECT r.*,row_number() OVER (PARTITION BY qlid ORDER BY sjtbsj DESC NULLS LAST,
+        xgsj DESC NULLS LAST,sczt DESC NULLS LAST,to_jsonb(r)::text DESC) AS source_rank
+        FROM dwd_ql_js_ql_inc r
+        WHERE nullif(trim(qlid),'') IS NOT NULL
+        ), bridge_candidates AS (
+        SELECT * FROM bridge_latest WHERE source_rank=1 AND (sczt=0 OR sczt IS NULL) AND sscsdm LIKE '32%'
+        ), point_latest AS (
+        SELECT DISTINCT ON(sscsdm,bsm) * FROM dwd_ql_jc_jcd_inc r
+        WHERE nullif(trim(bsm),'') IS NOT NULL
+        ORDER BY sscsdm,bsm,sjtbsj DESC NULLS LAST,(sjtbzt='D') DESC NULLS LAST,to_jsonb(r)::text DESC
+        ), point_source AS (
+        SELECT * FROM point_latest WHERE coalesce(sjtbzt,'')!='D' AND (jclx=70 OR jclx IS NULL)
+        ), bridge_keys AS (
+        SELECT sscsdm,qlid AS bridge_key,qlid AS bridge_id FROM bridge_candidates
+        UNION
+        SELECT sscsdm,qlbh AS bridge_key,qlid AS bridge_id FROM bridge_candidates WHERE nullif(trim(qlbh),'') IS NOT NULL
+        ), point_candidates AS (
+        SELECT p.*,k.bridge_id,count(*) OVER (PARTITION BY p.sscsdm,p.bsm) AS matches
+        FROM point_source p JOIN bridge_keys k
+        ON ARRAY[k.sscsdm,k.bridge_key]::text[]=ARRAY[p.sscsdm,p.ssbm]::text[]
+        ), point_bridge AS (
+        SELECT * FROM point_candidates WHERE matches=1
+        ), device_latest AS (
+        SELECT DISTINCT ON(sscsdm,bsm) * FROM dwd_ql_jc_jcsb_inc r
+        WHERE nullif(trim(bsm),'') IS NOT NULL
+        ORDER BY sscsdm,bsm,sjtbsj DESC NULLS LAST,(sjtbzt='D') DESC NULLS LAST,cjsj DESC NULLS LAST,to_jsonb(r)::text
+        DESC
+        ), device_source AS (
+        SELECT * FROM device_latest WHERE coalesce(sjtbzt,'')!='D'
+        ), device_bridges AS MATERIALIZED (
+        SELECT DISTINCT p.bridge_id FROM point_bridge p JOIN device_source d
+        ON ARRAY[d.sscsdm,d.dwbsm]::text[]=ARRAY[p.sscsdm,p.bsm]::text[]
+        ), bridge_active AS (
+        SELECT b.* FROM bridge_candidates b JOIN device_bridges d ON d.bridge_id=b.qlid
+        ), bridge_base AS (
+        SELECT b.*,d.bridge_id IS NOT NULL AS has_monitoring_devices,
+        CASE WHEN b.yhlb=1 THEN 'I' WHEN b.yhlb BETWEEN 2 AND 5 THEN 'II_V' ELSE 'unknown' END AS assessment_category,
+        CASE WHEN nullif(trim(b.qlwhzk),'') IS NULL THEN 'missing'
+        WHEN trim(b.qlwhzk) NOT IN('1','2','3','4','5','6','7') THEN 'invalid'
+        WHEN b.yhlb IS NULL OR b.yhlb NOT BETWEEN 1 AND 5 THEN 'unclassified'
+        WHEN (b.yhlb=1 AND trim(b.qlwhzk) IN('3','4','5','6','7'))
+          OR (b.yhlb BETWEEN 2 AND 5 AND trim(b.qlwhzk) IN('1','2')) THEN 'conflict'
+        ELSE trim(b.qlwhzk) END AS condition_grade_bucket,
+        CASE WHEN nullif(trim(b.qljgzk),'') IS NULL THEN 'missing'
+        WHEN trim(b.qljgzk) NOT IN('1','2','3','4','5','6','7') THEN 'invalid'
+        WHEN b.yhlb IS NULL OR b.yhlb NOT BETWEEN 1 AND 5 THEN 'unclassified'
+        WHEN (b.yhlb=1 AND trim(b.qljgzk) IN('3','4','5','6','7'))
+          OR (b.yhlb BETWEEN 2 AND 5 AND trim(b.qljgzk) IN('1','2')) THEN 'conflict'
+        ELSE trim(b.qljgzk) END AS structure_grade_bucket,
+        CASE WHEN b.jkjclx IS NULL AND d.bridge_id IS NOT NULL THEN 2 ELSE b.jkjclx END AS effective_monitoring_type
+        FROM bridge_active b LEFT JOIN device_bridges d ON d.bridge_id=b.qlid
+        )
+    </sql>
+    <sql id="fields">
+        b.qlid AS id,b.qlbh AS code,b.qlmc AS name,b.sscsdm AS city_code,
+        coalesce((SELECT max(name) FROM area a WHERE a.id=b.sscsdm),b.sscsdm) AS city,
+        b.jglx AS type,b.kjfl AS span_type,b.jkjclx AS monitoring_type,b.szdlmc AS road,
+        b.qlzc::float8 AS length,b.qlzk::float8 AS width,b.jd::float8 AS longitude,b.wd::float8 AS latitude,
+        b.qljgzk AS technical_grade,b.jcrq::text AS inspection_date,b.jgny AS completed_date,
+        b.gldw AS manager,b.yhdw AS maintainer,b.sjtbsj AS source_updated_at,
+        b.qlwhzk AS condition_grade,b.qljgzk AS structure_grade,b.yhlb AS maintenance_category,b.qlzt AS bridge_status,
+        b.sfyj AS transferred,b.sfcc AS demolished,b.cczt AS demolition_status,b.sfyjjcxt AS monitoring_system_built,
+        b.effective_monitoring_type,b.has_monitoring_devices,nullif(trim(b.jcbg),'') IS NOT NULL AS
+        inspection_report_present,
+        b.sfstql AS special_bridge,b.stql AS special_types_raw,b.sfdzd AS single_column_pier
+    </sql>
+    <sql id="filter">
+        <where>
+            <if test="filter.q != ''">AND (position(lower(#{filter.q}) in lower(coalesce(b.qlmc,'')))>0 OR
+                position(lower(#{filter.q}) in lower(coalesce(b.qlbh,'')))>0)
+            </if>
+            <if test="filter.city != ''">AND b.sscsdm=#{filter.city}</if>
+            <if test="filter.assessmentCategory != ''">AND b.assessment_category=#{filter.assessmentCategory}</if>
+            <if test="filter.type != null">
+                AND (CASE WHEN b.jglx BETWEEN 1 AND 6 THEN b.jglx ELSE 99 END)=#{filter.type}
+            </if>
+            <if test="filter.monitoringType != ''">
+                <choose>
+                    <when test='filter.monitoringType == "0"'>AND (b.effective_monitoring_type IS NULL OR b.effective_monitoring_type NOT IN(1,2))</when>
+                    <otherwise>AND b.effective_monitoring_type::text=#{filter.monitoringType}</otherwise>
+                </choose>
+            </if>
+            <if test="filter.conditionGrade != ''">
+                <choose>
+                    <when test="filter.conditionGrade == 'other'">AND b.condition_grade_bucket IN('missing','conflict','invalid','unclassified')</when>
+                    <when test="filter.conditionGrade == 'missing'">AND nullif(trim(b.qlwhzk),'') IS NULL</when>
+                    <when test="filter.conditionGrade == 'conflict' or filter.conditionGrade == 'invalid' or filter.conditionGrade == 'unclassified'">AND b.condition_grade_bucket=#{filter.conditionGrade}</when>
+                    <otherwise>AND trim(b.qlwhzk)=#{filter.conditionGrade}</otherwise>
+                </choose>
+            </if>
+            <if test="filter.structureGrade != ''">
+                <choose>
+                    <when test="filter.structureGrade == 'other'">AND b.structure_grade_bucket IN('missing','conflict','invalid','unclassified')</when>
+                    <when test="filter.structureGrade == 'missing'">AND nullif(trim(b.qljgzk),'') IS NULL</when>
+                    <when test="filter.structureGrade == 'conflict' or filter.structureGrade == 'invalid' or filter.structureGrade == 'unclassified'">AND b.structure_grade_bucket=#{filter.structureGrade}</when>
+                    <otherwise>AND trim(b.qljgzk)=#{filter.structureGrade}</otherwise>
+                </choose>
+            </if>
+            <if test="filter.bridgeStatus != ''">
+                <choose>
+                    <when test="filter.bridgeStatus == 'missing'">AND b.qlzt IS NULL</when>
+                    <otherwise>AND b.qlzt::text=#{filter.bridgeStatus}</otherwise>
+                </choose>
+            </if>
+            <if test="filter.transferred != null">AND b.sfyj=#{filter.transferred}</if>
+            <if test="filter.demolished != null">AND b.sfcc=#{filter.demolished}</if>
+            <if test="filter.demolitionStatus != null">AND b.cczt=#{filter.demolitionStatus}</if>
+            <if test="filter.spanType != ''">
+                <choose>
+                    <when test="filter.spanType == 'missing'">AND b.kjfl IS NULL</when>
+                    <otherwise>AND b.kjfl::text=#{filter.spanType}</otherwise>
+                </choose>
+            </if>
+            <if test="filter.maintenanceCategory != ''">
+                <choose>
+                    <when test="filter.maintenanceCategory == 'missing'">AND b.yhlb IS NULL</when>
+                    <otherwise>AND b.yhlb::text=#{filter.maintenanceCategory}</otherwise>
+                </choose>
+            </if>
+            <if test="filter.population == 'normalUse'">AND b.qlzt=0 AND b.sfcc=0</if>
+            <if test="filter.specialTypes != ''">
+                <choose>
+                    <when test="filter.specialTypes == 'missing'">AND nullif(trim(b.stql),'') IS NULL</when>
+                    <otherwise>AND regexp_split_to_array(trim(coalesce(b.stql,'')),'\s*,\s*') &amp;&amp;
+                        string_to_array(#{filter.specialTypes},',')
+                    </otherwise>
+                </choose>
+            </if>
+        </where>
+    </sql>
+    <select id="all" resultType="com.bridgemind.bridge.model.resp.BridgeResponse">
+        <include refid="base"/>
+        SELECT
+        <include refid="fields"/>
+        FROM bridge_base b
+        <include refid="filter"/>
+        ORDER BY b.sscsdm,b.qlmc,b.qlid
+    </select>
+    <select id="page" resultType="com.bridgemind.bridge.model.resp.BridgeResponse">
+        <include refid="base"/>
+        SELECT
+        <include refid="fields"/>
+        FROM bridge_base b
+        <include refid="filter"/>
+        ORDER BY b.sscsdm,b.qlmc,b.qlid LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="count" resultType="long">
+        <include refid="base"/>
+        SELECT count(*) FROM bridge_base b
+        <include refid="filter"/>
+    </select>
+    <select id="find" resultType="com.bridgemind.bridge.model.resp.BridgeResponse">
+        <include refid="base"/>
+        SELECT
+        <include refid="fields"/>
+        FROM bridge_base b WHERE b.qlid=#{id}
+    </select>
+    <select id="exists" resultType="boolean">
+        <include refid="base"/>
+        SELECT EXISTS(SELECT 1 FROM bridge_base WHERE qlid=#{id})
+    </select>
+    <select id="cities" resultType="com.bridgemind.dashboard.model.resp.DashboardResponse$Group">
+        <include refid="base"/>
+        SELECT b.sscsdm AS code,coalesce((SELECT max(name) FROM area a WHERE a.id=b.sscsdm),b.sscsdm) AS label,count(*)
+        AS count
+        FROM bridge_active b GROUP BY b.sscsdm ORDER BY count(*) DESC,b.sscsdm
+    </select>
+    <select id="archive" resultType="com.bridgemind.bridge.model.resp.BridgeArchive">
+        <include refid="base"/>
+        SELECT b.xzqhdm AS district_code,b.qlfl AS bridge_class,b.ytfl AS use_class,b.dldj AS road_grade,b.yhdj AS
+        maintenance_level,
+        b.qlks AS span_count,b.kjzh AS span_arrangement,b.dkzdkj AS max_span,b.qmmj AS deck_area,b.cllx AS
+        material,b.zlxs AS main_girder,
+        b.hzdj AS load_grade,b.shejhz AS design_load,b.sjhz AS actual_load,b.xzbz AS load_limit,b.sfdzd AS
+        single_column_pier,b.dzdsl AS single_column_pier_count,
+        b.jsdw AS construction_unit,b.sjdw AS design_unit,b.jldw AS supervision_unit,b.sgdw AS contractor,b.qlgk AS
+        overview,
+        b.jzndzdlx AS age_band,b.gkjhdzxny::text AS reconstruction_date,b.zzj AS cost_ten_thousand,b.dabh AS
+        archive_code,b.tzqk AS drawing_status,b.dzda AS electronic_archive,b.sjtbsj AS source_updated_at
+        FROM bridge_active b WHERE b.qlid=#{id}
+    </select>
+    <select id="archiveForVisible" resultType="com.bridgemind.bridge.model.resp.BridgeArchive">
+        <!-- Visibility is checked by the shared 30s snapshot in BridgeService. Keep identical latest-row ordering. -->
+        WITH bridge_active AS (
+          SELECT * FROM dwd_ql_js_ql_inc r WHERE qlid=#{id}
+          ORDER BY sjtbsj DESC NULLS LAST,xgsj DESC NULLS LAST,sczt DESC NULLS LAST,to_jsonb(r)::text DESC
+          LIMIT 1
+        )
+        SELECT b.xzqhdm AS district_code,b.qlfl AS bridge_class,b.ytfl AS use_class,b.dldj AS road_grade,b.yhdj AS
+        maintenance_level,
+        b.qlks AS span_count,b.kjzh AS span_arrangement,b.dkzdkj AS max_span,b.qmmj AS deck_area,b.cllx AS
+        material,b.zlxs AS main_girder,
+        b.hzdj AS load_grade,b.shejhz AS design_load,b.sjhz AS actual_load,b.xzbz AS load_limit,b.sfdzd AS
+        single_column_pier,b.dzdsl AS single_column_pier_count,
+        b.jsdw AS construction_unit,b.sjdw AS design_unit,b.jldw AS supervision_unit,b.sgdw AS contractor,b.qlgk AS
+        overview,
+        b.jzndzdlx AS age_band,b.gkjhdzxny::text AS reconstruction_date,b.zzj AS cost_ten_thousand,b.dabh AS
+        archive_code,b.tzqk AS drawing_status,b.dzda AS electronic_archive,b.sjtbsj AS source_updated_at
+        FROM bridge_active b WHERE b.qlid=#{id} AND (b.sczt=0 OR b.sczt IS NULL) AND b.sscsdm LIKE '32%'
+    </select>
+</mapper>

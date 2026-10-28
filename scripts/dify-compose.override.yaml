@@ -1,0 +1,21 @@
+# Chatbot / Chatflow only. The new autonomous Agent runtime is optional here.
+services:
+  plugin_daemon:
+    ports: !override
+      - "127.0.0.1:5003:5003"
+  api:
+    depends_on:
+      agent_backend:
+        condition: service_started
+        required: false
+  agent_backend:
+    profiles: [autonomous-agent]
+  worker:
+    depends_on:
+      agent_backend:
+        condition: service_started
+        required: false
+  local_sandbox:
+    profiles: [autonomous-agent]
+  agent_ssrf_proxy:
+    profiles: [autonomous-agent]

@@ -1,0 +1,12 @@
+**/node_modules/
+**/target/
+**/dist/
+**/test-results/
+**/playwright-report/
+**/__pycache__/
+.env
+.env.local
+runtime/
+*.log
+.idea/
+docs/历史资料/

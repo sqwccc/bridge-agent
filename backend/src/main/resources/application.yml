@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: bridgemind
+  profiles:
+    default: dev
+  flyway:
+    default-schema: ${APP_DB_SCHEMA:public}
+    schemas: ${APP_DB_SCHEMA:public}
+    create-schemas: false
+    locations: classpath:db/migration
+    validate-migration-naming: true
+server:
+  port: ${SERVER_PORT:8088}
+  servlet:
+    session:
+      timeout: 360m
+      cookie:
+        name: BRIDGEMIND_SESSION
+        http-only: true
+        same-site: lax
+mybatis-plus:
+  mapper-locations: classpath*:mapper/auth/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+bridgemind:
+  dify:
+    base-url: ${DIFY_BASE_URL:http://127.0.0.1:8090/v1}
+    api-key: ${DIFY_API_KEY:}
+    data-mode: ${DIFY_DATA_MODE:demo}
+    preview-access: ${DIFY_PREVIEW_ACCESS:false}
+  source:
+    schema: ${SOURCE_DB_SCHEMA:qiaoliang}
+  files:
+    base-url: ${REPORT_BASE_URL:}
+    max-bytes: ${REPORT_MAX_BYTES:20971520}

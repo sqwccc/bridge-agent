@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.bridgemind.alarm.mapper.AlarmMapper">
+    <sql id="joined">
+        <include refid="com.bridgemind.monitoring.mapper.MonitoringMapper.pointBridge"/>,
+        alarm_latest AS (SELECT DISTINCT ON(sscsdm,bsm) * FROM dwd_ql_jc_jcbj_data r ORDER BY sscsdm,bsm,tbsj DESC NULLS
+        LAST,extract_time DESC NULLS LAST,(sjtbzt='D') DESC NULLS LAST,to_jsonb(r)::text DESC),
+        alarm_source AS (SELECT * FROM alarm_latest WHERE coalesce(sjtbzt,'')!='D'),
+        filtered AS (SELECT a.*,b.qlid AS bridge_id,b.qlmc AS bridge_name FROM alarm_source a
+        JOIN point_bridge p ON p.bsm=a.dwbsm AND p.sscsdm=a.sscsdm JOIN bridge_base b ON b.qlid=p.bridge_id
+        <include refid="com.bridgemind.bridge.mapper.BridgeMapper.filter"/>
+        )
+    </sql>
+    <sql id="conditions">
+        WHERE a.bjsj IS NOT NULL
+        <if test="from != null and to != null">AND a.bjsj BETWEEN #{from} AND #{to}</if>
+        <if test="id != null and id != ''">AND a.bridge_id=#{id}</if>
+        <if test="level != null and level != ''">AND a.bjjb=#{level}</if>
+    </sql>
+    <select id="list" resultType="com.bridgemind.alarm.model.resp.AlarmResponse">
+        <include refid="joined"/>
+        SELECT a.bsm AS id,a.bridge_id,a.bridge_name,a.sscsdm AS city_code,a.bjsj AS time,a.bjmc AS name,
+        a.jcbjzb AS metric,a.bjjb AS level,a.bjz AS value,a.bjyz AS threshold,h.czzt::text AS handling_status,h.wcczsj
+        AS handled_at,count(*) OVER() AS matching_total
+        FROM filtered a LEFT JOIN LATERAL (
+        SELECT czzt,wcczsj FROM dwd_ql_jc_bjcz_data h WHERE h.bjbh=a.bjbh
+        AND left(h.xzqhdm,4)=left(a.sscsdm,4) AND coalesce(h.sjtbzt,'')!='D'
+        ORDER BY h.gxsj DESC NULLS LAST,h.bsm LIMIT 1
+        ) h ON true
+        <include refid="conditions"/>
+        ORDER BY a.bjsj DESC,a.bsm,a.sscsdm LIMIT #{limit} OFFSET #{offset}
+    </select>
+    <select id="count" resultType="long">
+        <include refid="joined"/>
+        SELECT count(*) FROM filtered a
+        <include refid="conditions"/>
+    </select>
+</mapper>

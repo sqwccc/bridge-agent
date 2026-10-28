@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.bridgemind.report.mapper.ReportMapper">
+    <select id="list" resultType="com.bridgemind.report.model.entity.ReportRecord">
+        <include refid="com.bridgemind.bridge.mapper.BridgeMapper.base"/>, inspection_latest AS (
+        SELECT DISTINCT ON(sscsdm,bsm) * FROM dwd_ql_jg_dqjc_all r
+        ORDER BY sscsdm,bsm,tbsj DESC NULLS LAST,extract_time DESC NULLS LAST,(sjtbzt='D') DESC NULLS
+        LAST,to_jsonb(r)::text DESC
+        ), unique_bridge_keys AS (
+        SELECT sscsdm,bridge_key,min(bridge_id) AS bridge_id FROM bridge_keys GROUP BY sscsdm,bridge_key HAVING
+        count(*)=1
+        ), regular_candidate_keys AS (
+        SELECT DISTINCT sscsdm,id FROM dwd_ql_jg_cgdj_inc WHERE qlid=#{id}
+        ), regular_latest AS (
+        SELECT DISTINCT ON(r.sscsdm,r.id) r.* FROM dwd_ql_jg_cgdj_inc r JOIN regular_candidate_keys k
+        ON ARRAY[k.sscsdm,k.id]::text[]=ARRAY[r.sscsdm,r.id]::text[]
+        ORDER BY r.sscsdm,r.id,r.sjtbsj DESC NULLS LAST,r.xgsj DESC NULLS LAST,to_jsonb(r)::text DESC
+        ), regular_for_bridge AS (
+        SELECT r.* FROM regular_latest r JOIN bridge_active b ON
+        ARRAY[b.sscsdm,b.qlid]::text[]=ARRAY[r.sscsdm,r.qlid]::text[] WHERE b.qlid=#{id}
+        ), task_ids AS (
+        SELECT DISTINCT rwid FROM regular_for_bridge WHERE nullif(trim(rwid),'') IS NOT NULL
+        ), task_candidate_keys AS (
+        SELECT DISTINCT r.sscsdm,r.id FROM dwd_ql_jg_cgdj_inc r JOIN task_ids t ON t.rwid=r.rwid
+        ), task_regular_latest AS (
+        SELECT DISTINCT ON(r.sscsdm,r.id) r.* FROM dwd_ql_jg_cgdj_inc r JOIN task_candidate_keys k
+        ON ARRAY[k.sscsdm,k.id]::text[]=ARRAY[r.sscsdm,r.id]::text[]
+        ORDER BY r.sscsdm,r.id,r.sjtbsj DESC NULLS LAST,r.xgsj DESC NULLS LAST,to_jsonb(r)::text DESC
+        ), task_bridge_counts AS (
+        SELECT r.rwid,count(DISTINCT b.qlid)::integer AS related_bridge_count FROM task_regular_latest r
+        JOIN task_ids t ON t.rwid=r.rwid JOIN bridge_active b ON
+        ARRAY[b.sscsdm,b.qlid]::text[]=ARRAY[r.sscsdm,r.qlid]::text[] GROUP BY r.rwid
+        ), attachment_candidate_ids AS (
+        SELECT DISTINCT f.id FROM dwd_ql_js_fjxxb_inc f JOIN regular_for_bridge r ON r.id=f.fid
+        UNION
+        SELECT DISTINCT f.id FROM dwd_ql_js_fjxxb_inc f JOIN task_ids t ON t.rwid=f.fid
+        ), attachment_latest AS (
+        SELECT DISTINCT ON(f.id) f.* FROM dwd_ql_js_fjxxb_inc f JOIN attachment_candidate_ids k ON k.id=f.id
+        ORDER BY f.id,f.sjtbsj DESC NULLS LAST,f.xgsj DESC NULLS LAST,to_jsonb(f)::text DESC
+        ), regular_unique_ids AS (
+        SELECT id FROM dwd_ql_jg_cgdj_inc GROUP BY id HAVING count(DISTINCT sscsdm)=1
+        ), task_file_ids AS (
+        SELECT DISTINCT f.id FROM ql_sys_file f JOIN task_ids t ON t.rwid=f.p_id
+        ), task_file_latest AS (
+        SELECT DISTINCT ON(f.id) f.* FROM ql_sys_file f JOIN task_file_ids k ON k.id=f.id
+        ORDER BY f.id,f.update_date DESC NULLS LAST,f.create_time DESC NULLS LAST,f.version DESC NULLS
+        LAST,to_jsonb(f)::text DESC
+        ), reports AS (
+        SELECT 'base-'||b.qlid AS id,b.qlmc||'检测报告' AS name,'底数关联检测报告'::text AS type,b.jcrq::timestamp AS
+        time,b.jcbg AS path,
+        'BASE_INSPECTION'::text AS source,b.qlid AS inspection_id,NULL::integer AS inspection_type,b.sjtbsj AS
+        source_updated_at,
+        NULL::text AS task_id,NULL::integer AS related_bridge_count
+        FROM bridge_active b WHERE b.qlid=#{id}
+        UNION ALL
+        SELECT 'inspection-'||r.bsm,coalesce(nullif(trim(r.mc),''),'定期检测报告'),'定期检测报告',r.jcsj,r.fj,
+        'PERIODIC_INSPECTION',r.bsm,r.jclx,r.tbsj,NULL::text,NULL::integer
+        FROM inspection_latest r JOIN unique_bridge_keys k ON
+        ARRAY[k.sscsdm,k.bridge_key]::text[]=ARRAY[r.sscsdm,r.jcdx]::text[]
+        WHERE k.bridge_id=#{id} AND coalesce(r.sjtbzt,'')!='D'
+        UNION ALL
+        SELECT CASE WHEN f.id IS NULL THEN 'regular-'||r.sscsdm||'-'||r.id ELSE 'attachment-'||f.id END,
+        coalesce(nullif(f.mc,''),nullif(f.name,''),r.jcnd::text||'年常规定检报告','常规定检报告'),'常规定检报告',r.wcsj,coalesce(nullif(f.wjurldz,''),f.lj),
+        'REGULAR_INSPECTION',r.id,1,r.sjtbsj,r.rwid,NULL::integer
+        FROM regular_for_bridge r
+        LEFT JOIN attachment_latest f ON f.fid=r.id AND EXISTS(SELECT 1 FROM regular_unique_ids u WHERE u.id=r.id)
+        UNION ALL
+        SELECT 'bridge-attachment-'||b.qlid,b.qlmc||'桥梁附件','桥梁图片及附件',NULL::timestamp,b.fj,
+        'BRIDGE_ATTACHMENT',NULL::text,NULL::integer,b.sjtbsj,NULL::text,NULL::integer
+        FROM bridge_active b WHERE b.qlid=#{id} AND nullif(trim(b.fj),'') IS NOT NULL
+        UNION ALL
+        SELECT 'task-attachment-'||f.id,coalesce(nullif(f.mc,''),nullif(f.name,''),'共享任务附件'),'共享定检任务附件',NULL::timestamp,
+        coalesce(nullif(f.wjurldz,''),f.lj),'TASK_ATTACHMENT',NULL::text,1,f.sjtbsj::timestamp,t.rwid,c.related_bridge_count
+        FROM task_ids t JOIN attachment_latest f ON f.fid=t.rwid JOIN task_bridge_counts c ON c.rwid=t.rwid
+        UNION ALL
+        SELECT
+        'task-file-'||f.id,coalesce(nullif(f.display_name,''),nullif(f.name,''),'共享任务文件'),'共享定检任务附件',NULL::timestamp,
+        f.path,'TASK_FILE',NULL::text,1,coalesce(f.update_date,f.create_time),t.rwid,c.related_bridge_count
+        FROM task_ids t JOIN task_file_latest f ON f.p_id=t.rwid JOIN task_bridge_counts c ON c.rwid=t.rwid
+        ) SELECT
+        id,name,type,time,path,source,inspection_id,inspection_type,source_updated_at,task_id,related_bridge_count FROM
+        reports WHERE EXISTS(SELECT 1 FROM bridge_active b WHERE b.qlid=#{id})
+        ORDER BY time DESC NULLS LAST,id
+    </select>
+</mapper>
