@@ -38,6 +38,8 @@ public final class AgentRules {
             }
         }catch(DateTimeException e){return clarify("日期无法识别，请使用YYYY-MM-DD至YYYY-MM-DD。");}
         String topic=switch(q){
+            case "整体数据情况","总体数据情况","整体数据概况","数据总体情况","数据概览","数据整体情况" -> "data_overview";
+            case "养护方案","制定养护方案","生成养护方案","给出养护方案","养护计划","养护建议" -> "maintenance_plan";
             case "接入桥梁概况","桥梁概况","整体状态如何","各地市接入桥梁数量对比","BCI等级分布","BSI等级分布","Ⅱ至Ⅴ类桥梁的BSI等级分布" -> "overview";
             case "主要病害","病害情况","病害主要集中在哪些部位","病害部位分布","病害月度变化" -> "defects";
             case "维修情况","维修月度变化" -> "maintenance";
@@ -50,11 +52,15 @@ public final class AgentRules {
             default -> null;
         };
         if(topic!=null){
-            if((from!=null||to!=null)&&!Set.of("patrols","defects","maintenance","alarms").contains(topic))return clarify("这个主题不支持业务日期前缀；监测分析请明确开始和结束时间。");
+            if((from!=null||to!=null)&&!Set.of("patrols","defects","maintenance","alarms","data_overview","maintenance_plan").contains(topic))return clarify("这个主题不支持业务日期前缀；监测分析请明确开始和结束时间。");
             try{
                 var wf=new WorkFilter(from,to,null,null,null,null,null,null,null,false);
                 if(topic.equals("alarms")&&from!=null&&java.time.temporal.ChronoUnit.DAYS.between(from,to)>30)return clarify("报警查询日期最多31天。");
                 var filter=q.equals("Ⅱ至Ⅴ类桥梁的BSI等级分布")?new com.bridgemind.bridge.model.req.BridgeFilter(null,null,null,null,null,null,null,null,null,null,null,null,null,null,"II_V"):null;
+                if(Set.of("data_overview","maintenance_plan").contains(topic)&&previous!=null){
+                    filter=previous.bridgeFilter();
+                    if(from==null&&to==null)wf=new WorkFilter(previous.workFilter().from(),previous.workFilter().to(),null,null,null,null,null,null,null,false);
+                }
                 return new AgentPlan("business_query",topic,filter,wf,null,null,null);
             }catch(IllegalArgumentException e){return clarify("请检查开始和结束日期。");}
         }

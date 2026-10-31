@@ -13,6 +13,7 @@ public final class AgentPresentation {
     private static String text(JsonNode n,String key){return n.path(key).asText("");}
     private static Map<String,Object> row(String name,Object value){return Map.of("name",name,"value",value);}
     public static Visualization chart(AgentEvidence.Evidence evidence,String question,JsonMapper json){
+        if(evidence.data().containsKey("重点问答"))return AgentFocusPresentation.chart(evidence,json);
         var root=json.valueToTree(evidence.data());
         var monitor=root.path("监测分析");
         String scope=text(root,"范围说明"),period="当前档案快照；业务日期见查询条件",source="本次后端全量统计";
@@ -77,6 +78,7 @@ public final class AgentPresentation {
     }
 
     public static String answer(AgentEvidence.Evidence evidence,String question,Visualization chart,JsonMapper json){
+        if(evidence.data().containsKey("重点问答"))return AgentFocusPresentation.answer(evidence,question,json);
         var root=json.valueToTree(evidence.data());var lines=new ArrayList<String>();
         if(text(root,"数据模式").contains("合成"))lines.add("**合成联调样例，不代表真实桥梁。**");
         if(root.has("需要选择桥梁"))return "**需要补充条件**："+text(root,"需要选择桥梁");

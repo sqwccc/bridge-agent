@@ -14,6 +14,17 @@ import static org.mockito.Mockito.*;
 class AgentEnhancementTest {
     private static final LocalDateTime START=LocalDateTime.of(2026,10,1,0,0);
     private SampleResponse sample(int minutes,Double value){return new SampleResponse(START.plusMinutes(minutes),Objects.toString(value,"bad"),value);}
+    @Test void focusTopicsRetainDatesAndRejectRecordFilters() {
+        var first=AgentRules.classify("2026-01-01至2026-10-31整体数据情况","network",null);
+        assertEquals("data_overview",first.topic());
+        var next=AgentRules.classify("养护方案","network",first);
+        assertEquals("maintenance_plan",next.topic());assertEquals(first.workFilter().from(),next.workFilter().from());
+        assertThrows(IllegalArgumentException.class,()->new AgentPlan("business_query","maintenance_plan",null,null,"record","",null));
+        var evidence=new AgentEvidence.Evidence(Map.of("重点问答","maintenance_plan","养护编排",Map.of("分组统计",List.of(Map.of("code","verify_closure","count",4)))),List.of());
+        var chart=AgentPresentation.chart(evidence,"养护方案",JsonMapper.builder().build());
+        assertEquals("table",chart.type());assertEquals(1,chart.rows().size());assertEquals(4L,chart.rows().getFirst().get("count"));
+        assertTrue(chart.rows().getFirst().get("action").toString().contains("不直接视为闭环"));
+    }
     @Test void fitsRealTimeAndRetainsNegativePeakTimestamp(){
         var stats=MonitoringAnalysis.statistics(List.of(sample(0,-10.0),sample(60,-8.0),sample(180,-4.0),sample(200,null)));
         assertEquals(2.0,(Double)stats.get("slopePerHour"),1e-9);

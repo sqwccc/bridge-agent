@@ -71,3 +71,16 @@ python scripts/verify-agent-enhancement.py --model
 证据保存在runtime/agent-enhancement-evidence.json、runtime/agent-stream-live.json、runtime/dify-model-verification.json；截图为runtime/agent-enhancement-live-ui.png和runtime/agent-stream-live-browser.png。文件均留在本地忽略目录。
 
 此前Docker启动的dockerInference文件访问错误已不再阻塞：本轮开始检查时Docker已经恢复，Server为29.5.3，Dify项目12个容器中11个正常运行，初始化权限容器以0退出；有健康检查的API、数据库、Redis、sandbox均正常。没有重建或重置数据卷。已成功执行`sync-agent-prompts.py --apply-local`，分类和回答应用均保留既有deepseek-flash模型与凭据，提示词与仓库源文件一致；真实模型联调已完成。
+
+
+## 重点问答：整体数据情况与养护方案
+
+总体和单桥面板新增两个快捷问题，自动模型和规则模式均可使用，并保留页面桥梁筛选。分类主题分别为 `data_overview` 与 `maintenance_plan`。可使用“2026-01-01至2026-10-31整体数据情况”，随后追问“养护方案”；业务日期仅约束巡检、病害、维修和读数，档案、评价及设备配置仍为当前快照。综合主题拒绝混用单业务状态、部位、程度、记录详情或报警等级，避免不同业务套用同一条件。
+
+- 整体数据情况：桥梁及评价底数、巡检/病害/维修全量及实际时间、监测配置和历史读数覆盖、资料缺口、后续建议；后端生成四类数据汇总表，各业务全量统计具有独立引用。
+- 养护方案：按同一病害记录的程度与状态交叉生成互斥核查组，给出任务、建议负责角色、完成凭证和最多5条候选。严重/紧急且未完成的历史记录先核实现状，其余按待办、完成验收复核、暂缓复核、状态补齐处理。不是风险评分、批准工单或施工设计，不虚构预算、工法和固定工期。
+- 监测覆盖读取当前有效关联通道中的历史记录，包含非数值记录；不能等同在线率或有效分析样本。未查询报警明细、报告正文，不将其当成零。
+
+复验：`python scripts/verify-agent-focus.py`（规则）或追加 `--model`（强制断言Dify实际回答），覆盖总体/单桥各两个问题，并核对任务分组合计。结果保存至 `runtime/agent-focus-evidence.json`。浏览器 `pnpm exec playwright test e2e/agent-focus.spec.ts` 回放真实联调证据，检查两个快捷入口和表格。源库边界测试为 `AgentSourceIntegrationTest#focusGroupsAndCoverageRespectScopeAndDates`，需显式设置 `-Dbridgemind.sourceIntegration=true`，核验空范围、未来日期、当前配置保留及分组数量。所有来源访问只读。
+
+本次重点问答验证：后端56例普通测试通过，另1例只读源库边界测试通过；前端5例单元测试、lint和build通过。总体/单桥各2个真实Dify模型场景共4例全部通过（无规则降级），规则模式同样4例通过。浏览器6例原问答回归加2例重点问答证据回放通过；回放用于页面检查，不冒充浏览器实时模型调用。真实数据底数为131座桥、23345条巡检、722条病害、484条维修、3000条读数；养护互斥组为81/183/458条，合计722。查询源库多次聚合，响应耗时受源库和模型负载影响。超过6项的来源列表折叠展示，可展开追溯。单桥重点问答移除原始评价编码，仅向模型提供明确的BCI/BSI等级名称，避免将编码7误写成“技术等级7”。

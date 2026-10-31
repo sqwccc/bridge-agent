@@ -36,5 +36,22 @@ class AgentSourceIntegrationTest {
             assertTrue(connection.isReadOnly());
         }
     }
+    @Test void focusGroupsAndCoverageRespectScopeAndDates() throws Exception {
+        try(var connection=SourceMapperIntegrationTest.connection();var session=SourceMapperIntegrationTest.factory.openSession(connection)){
+            var mapper=session.getMapper(AgentMapper.class);
+            var ids=session.getMapper(BridgeMapper.class).all(new BridgeFilter(null,null,null,null)).stream().map(b->b.id()).toList();
+            var groups=mapper.maintenancePriorities(ids,"defects",WorkFilter.all());
+            assertEquals(total(mapper.summary(ids,"defects",WorkFilter.all())),groups.stream().mapToLong(g->((Number)g.get("count")).longValue()).sum());
+            var candidates=mapper.maintenanceCandidates(ids,"defects",WorkFilter.all());
+            assertTrue(candidates.size()<=5);assertTrue(candidates.stream().allMatch(r->ids.contains(r.bridgeId())));
+            var coverage=mapper.monitoringCoverage(ids,WorkFilter.all());
+            assertTrue(((Number)coverage.get("reading_count")).longValue()>0);
+            assertEquals(0L,((Number)mapper.monitoringCoverage(List.of(),WorkFilter.all()).get("reading_count")).longValue());
+            var future=new WorkFilter(LocalDate.of(2099,1,1),LocalDate.of(2099,1,2),null,null,null,null,null,null,null,false);
+            var empty=mapper.monitoringCoverage(ids,future);
+            assertEquals(0L,((Number)empty.get("reading_count")).longValue());assertEquals(coverage.get("channel_count"),empty.get("channel_count"));
+            assertTrue(mapper.maintenancePriorities(ids,"defects",future).isEmpty());assertTrue(connection.isReadOnly());
+        }
+    }
     private long total(List<Map<String,Object>> rows){return ((Number)rows.stream().filter(r->r.get("dimension").equals("total")).findFirst().orElseThrow().get("count")).longValue();}
 }

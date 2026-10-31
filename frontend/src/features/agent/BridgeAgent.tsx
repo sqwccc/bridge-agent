@@ -223,6 +223,8 @@ export function BridgeAgent({
   }
   const presets = bridgeId
     ? [
+        "整体数据情况",
+        "养护方案",
         "桥梁概况",
         "主要病害",
         "维修情况",
@@ -233,6 +235,8 @@ export function BridgeAgent({
         "使用帮助",
       ]
     : [
+        "整体数据情况",
+        "养护方案",
         "接入桥梁概况",
         "各地市接入桥梁数量对比",
         "Ⅱ至Ⅴ类桥梁的BSI等级分布",
@@ -319,21 +323,32 @@ export function BridgeAgent({
               {m.status}
             </p>
             {m.error && <p role="alert">{m.error}</p>}
-            {m.evidence?.references.map((r) => (
-              <a
-                className="agent-reference"
-                key={r.id}
-                href={
-                  r.url.startsWith("/") && !r.url.startsWith("//")
-                    ? r.url
-                    : undefined
-                }
-                target="_blank"
-                rel="noreferrer"
-              >
-                [{r.id}] {r.label}
-              </a>
-            ))}
+            {!!m.evidence?.references.length && (
+              <details open={m.evidence.references.length <= 6}>
+                <summary>
+                  查看来源依据（{m.evidence.references.length}项）
+                </summary>
+                {m.evidence.references.map((r) => (
+                  <a
+                    className="agent-reference"
+                    key={r.id}
+                    href={
+                      r.url.startsWith("/") && !r.url.startsWith("//")
+                        ? r.url
+                        : undefined
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    [{r.id}]{" "}
+                    {r.label
+                      .replaceAll("patrols", "巡检")
+                      .replaceAll("defects", "病害")
+                      .replaceAll("maintenance", "维修")}
+                  </a>
+                ))}
+              </details>
+            )}
             {(m.plan || m.evidence) && (
               <details>
                 <summary>查看查询条件、资料与统计范围</summary>

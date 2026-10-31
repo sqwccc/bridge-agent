@@ -1,6 +1,50 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.bridgemind.agent.mapper.AgentMapper">
+    <select id="monitoringCoverage" resultType="map" timeout="30">
+        <include refid="com.bridgemind.bridge.mapper.BridgeMapper.base"/>, selected_channels AS (
+        SELECT DISTINCT p.bridge_id,p.sscsdm,p.bsm AS point_id,d.bsm AS device_id,d.jczb AS metric
+        FROM point_bridge p JOIN device_source d ON d.dwbsm=p.bsm AND d.sscsdm=p.sscsdm
+        WHERE
+        <choose><when test="bridgeIds != null and !bridgeIds.isEmpty()">
+            p.bridge_id IN <foreach collection="bridgeIds" item="id" open="(" close=")" separator=",">#{id}</foreach>
+        </when><otherwise>FALSE</otherwise></choose>
+        ), readings AS (
+        SELECT c.bridge_id,c.sscsdm,c.point_id,c.device_id,c.metric,s.jccjsj
+        FROM selected_channels c JOIN dwd_ql_jc_jcz_inc s ON s.sscsdm=c.sscsdm AND s.dwbsm=c.point_id
+            AND s.sbbsm=c.device_id AND s.jczb IS NOT DISTINCT FROM c.metric
+        WHERE coalesce(s.sjtbzt,'')!='D'
+        <if test="filter.from != null">AND s.jccjsj &gt;= #{filter.from}::date</if>
+        <if test="filter.to != null">AND s.jccjsj &lt; (#{filter.to}::date + INTERVAL '1 day')</if>
+        )
+        SELECT (SELECT count(*) FROM selected_channels) AS channel_count,
+            (SELECT count(DISTINCT bridge_id) FROM selected_channels) AS configured_bridges,
+            count(*) AS reading_count,count(DISTINCT bridge_id) AS bridges_with_readings,
+            count(DISTINCT (sscsdm,point_id,device_id,metric)) AS channels_with_readings,
+            min(jccjsj)::text AS first_time,max(jccjsj)::text AS last_time
+        FROM readings
+    </select>
+    <!-- Source severity/status cross-tab, NOT an engineering risk score or live alarm priority. -->
+    <sql id="maintenancePriority">
+        CASE WHEN severity IN (4,5) AND (status IS NULL OR status NOT IN (4,5)) THEN 'verify_severe'
+             WHEN status IN (1,2,3) THEN 'follow_pending'
+             WHEN status IN (4,5) THEN 'verify_closure'
+             WHEN status=6 THEN 'review_deferred' ELSE 'complete_status' END
+    </sql>
+    <select id="maintenancePriorities" resultType="map" timeout="30">
+        <include refid="com.bridgemind.work.mapper.WorkMapper.base"/>,
+        matched AS (SELECT * FROM records r <include refid="com.bridgemind.work.mapper.WorkMapper.filter"/>)
+        SELECT <include refid="maintenancePriority"/> AS code,count(*) AS count
+        FROM matched GROUP BY 1 ORDER BY 1
+    </select>
+    <select id="maintenanceCandidates" resultType="com.bridgemind.work.model.WorkRecord" timeout="30">
+        <include refid="com.bridgemind.work.mapper.WorkMapper.base"/>
+        SELECT <include refid="com.bridgemind.work.mapper.WorkMapper.fields"/>,NULL::bigint AS matching_total
+        FROM records r <include refid="com.bridgemind.work.mapper.WorkMapper.filter"/>
+        ORDER BY CASE WHEN r.severity IN (4,5) AND (r.status IS NULL OR r.status NOT IN (4,5)) THEN 0
+            WHEN r.status IN (1,2,3) THEN 1 WHEN r.status IS NULL THEN 2 ELSE 3 END,
+            r.occurred_at DESC NULLS LAST,r.id LIMIT 5
+    </select>
     <select id="summary" resultType="map" timeout="30">
         <include refid="com.bridgemind.work.mapper.WorkMapper.base"/>,
         matched AS MATERIALIZED (SELECT * FROM records r <include refid="com.bridgemind.work.mapper.WorkMapper.filter"/>)

@@ -15,12 +15,17 @@ public record AgentPlan(String route, String topic, BridgeFilter bridgeFilter, W
         if (!Set.of("business_query", "domain_knowledge", "greeting_help", "unsupported", "out_of_scope", "clarification_required").contains(route))
             throw new IllegalArgumentException("问题分类无效，请明确问题后重试");
         topic = topic == null ? "overview" : topic;
-        if (!Set.of("overview", "bridges", "archive", "patrols", "defects", "maintenance", "alarms", "monitoring", "reports", "quality").contains(topic))
+        if (!Set.of("overview", "data_overview", "maintenance_plan", "bridges", "archive", "patrols", "defects", "maintenance", "alarms", "monitoring", "reports", "quality").contains(topic))
             throw new IllegalArgumentException("暂不支持此查询类型");
         bridgeFilter = bridgeFilter == null ? new BridgeFilter(null, null, null, null) : bridgeFilter;
         workFilter = workFilter == null ? WorkFilter.all() : workFilter;
+        if (Set.of("data_overview","maintenance_plan").contains(topic) &&
+                (!workFilter.status().isEmpty()||!workFilter.zone().isEmpty()||!workFilter.damageType().isEmpty()||!workFilter.severity().isEmpty()
+                ||!workFilter.maintenanceType().isEmpty()||!workFilter.q().isEmpty()||!workFilter.defectCode().isEmpty()||workFilter.issuesOnly()))
+            throw new IllegalArgumentException("综合主题支持桥梁范围和日期；特定病害或维修条件请单独查询，避免跨业务混用条件");
         recordId = recordId == null ? "" : recordId.strip();
         level = level == null ? "" : level;
+        if (Set.of("data_overview","maintenance_plan").contains(topic) && (!recordId.isEmpty()||!level.isEmpty())) throw new IllegalArgumentException("综合主题不支持记录详情或报警等级条件");
         if (recordId.length() > 100 || !Set.of("", "1", "2", "3").contains(level)) throw new IllegalArgumentException("查询参数无效");
         if (clarification != null && clarification.length() > 500) throw new IllegalArgumentException("澄清文本过长");
         if (monitoring != null && !topic.equals("monitoring")) throw new IllegalArgumentException("监测分析参数只能用于监测主题");

@@ -50,7 +50,8 @@ public class AgentEvidence {
         if (bridgeId != null) bridges.requireExists(bridgeId);
         var filter = plan.bridgeFilter();
         String topic = plan.topic();
-        if (bridgeId == null && Set.of("archive", "monitoring", "reports").contains(topic)) {
+        boolean focus=Set.of("data_overview","maintenance_plan").contains(topic);
+        if (bridgeId == null && (Set.of("archive", "monitoring", "reports").contains(topic) || focus&&!filter.q().isBlank())) {
             var candidates=bridges.page(filter,1,10);
             if (!filter.q().isBlank() && candidates.total()==1) bridgeId=candidates.items().getFirst().id();
             else {
@@ -61,16 +62,26 @@ public class AgentEvidence {
                 return new Evidence(data,refs);
             }
         }
-        if (topic.equals("archive") || (topic.equals("overview") && bridgeId != null)) {
+        if (focus) {
+            data.put("重点问答",topic);
+            data.put("范围说明",bridgeId==null?"当前页面及问题筛选下的接入桥梁，不代表全省全部桥梁。档案为当前快照；业务记录及读数按指定日期筛选，未指定日期时为全部历史。":
+                    "仅当前桥梁 "+bridges.require(bridgeId).name()+"（"+bridgeId+"）。档案为当前快照；业务记录及读数按指定日期筛选，未指定日期时为全部历史。");
+        }
+        var focusedIds=focus?(bridgeId==null?bridges.all(filter).stream().map(b->b.id()).toList():List.of(bridgeId)):List.<String>of();
+        if (topic.equals("archive") || ((topic.equals("overview")||focus) && bridgeId != null)) {
             requireBridge(bridgeId);
             var archive = json.valueToTree(bridges.detail(bridgeId));
+            if(focus && archive instanceof tools.jackson.databind.node.ObjectNode node){
+                node.remove("technicalGrade");node.remove("conditionGrade");node.remove("structureGrade");
+                node.put("评价解释","仅使用conditionGradeName（BCI）和structureGradeName（BSI）；来源编码不是等级名称，两种评价不可混用。");
+            }
             if (archive.get("archive") instanceof tools.jackson.databind.node.ObjectNode node) {
                 node.remove("electronicArchive"); node.remove("drawingStatus");
             }
             data.put("档案", archive);
             refs.add(new Reference("E1", "当前桥梁档案", "/bridges/"+path(bridgeId)));
         }
-        if ((topic.equals("overview") && bridgeId == null) || topic.equals("bridges") || topic.equals("quality")) {
+        if (((topic.equals("overview")||focus) && bridgeId == null) || topic.equals("bridges") || topic.equals("quality")) {
             if (bridgeId != null) {
                 data.put("桥梁", bridges.require(bridgeId));
                 refs.add(new Reference("E1", "当前桥梁资料及缺失说明", "/bridges/"+path(bridgeId)));
@@ -87,7 +98,7 @@ public class AgentEvidence {
                 }
                 data.put("总体统计", summary);
                 refs.add(new Reference("E1","本次总体统计与筛选依据","/api/v1/dashboard?"+alarmParams(new AgentPlan("business_query","overview",filter,null,null,null,null),null)));
-                if(!topic.equals("overview")) {
+                if(!topic.equals("overview")&&!focus) {
                     var page = bridges.page(filter,1,20);
                     data.put("桥梁列表", page);
                     data.put("列表截断", page.total()>page.items().size());
@@ -96,18 +107,24 @@ public class AgentEvidence {
                 if (topic.equals("quality")) data.put("评价质量口径", "其他包括缺失、编码异常、养护类别冲突；只汇总档案评价完整性，不是全库数据质量审计。清单是当前筛选下前20座，不能声称列出了全部问题桥梁。");
             }
         }
-        var kinds = topic.equals("overview") && bridgeId != null ? List.of("defects","maintenance") :
+        var kinds = focus?List.of("patrols","defects","maintenance"):topic.equals("overview") && bridgeId != null ? List.of("defects","maintenance") :
                 Set.of("patrols","defects","maintenance").contains(topic) ? List.of(topic) : List.<String>of();
         if (!kinds.isEmpty()) {
-            var ids = bridgeId != null ? List.of(bridgeId) : bridges.all(filter).stream().map(b -> b.id()).toList();
+            var ids = focus?focusedIds:bridgeId != null ? List.of(bridgeId) : bridges.all(filter).stream().map(b -> b.id()).toList();
             for (String kind : kinds) {
                 var wf = plan.workFilter();
                 WorkService.validate(WorkKind.parse(kind),wf,1,10);
                 var dimensions=kind.equals("defects")?Set.of("total","city","month","zone","status","severity","damageType"):
                         kind.equals("maintenance")?Set.of("total","city","month","status","maintenanceType"):Set.of("total","city","month","resultProvided");
-                var summary = mapper.summary(ids,kind,wf).stream().filter(row->dimensions.contains(row.get("dimension"))).toList();
-                var examples = mapper.examples(ids,kind,wf);
-                data.put(kind, Map.of("全量聚合",summary,"最新样本",examples.stream().map(this::project).toList(),"样本上限",10));
+                if(focus)dimensions=kind.equals("defects")?Set.of("total","zone","status","severity","damageType"):
+                        kind.equals("maintenance")?Set.of("total","status","maintenanceType"):Set.of("total","resultProvided");
+                var selectedDimensions=dimensions;
+                var summary = mapper.summary(ids,kind,wf).stream().filter(row->selectedDimensions.contains(row.get("dimension"))).toList();
+                var examples = mapper.examples(ids,kind,wf).stream().limit(focus?3:10).toList();
+                String aggregateRef="E"+(refs.size()+1);
+                if(focus)refs.add(new Reference(aggregateRef,"本次"+kind+"全量统计（当前范围及日期）",bridgeId==null?"/screen":"/bridges/"+path(bridgeId)));
+                data.put(kind, focus?Map.of("全量聚合",summary,"聚合引用",aggregateRef,"最新样本",examples.stream().map(this::project).toList(),"样本上限",3):
+                        Map.of("全量聚合",summary,"最新样本",examples.stream().map(this::project).toList(),"样本上限",10));
                 for (var r : examples) refs.add(new Reference("E"+(refs.size()+1),r.bridgeName()+" · "+kind+" · "+r.id(),
                         "/bridges/"+path(r.bridgeId())+"/records?kind="+kind+"&q="+path(r.id())));
                 if (!plan.recordId().isBlank()) {
@@ -118,6 +135,22 @@ public class AgentEvidence {
                     refs.add(new Reference("E"+(refs.size()+1),"记录 "+plan.recordId(),"/bridges/"+path(bridgeId)+"/records?kind="+kind+"&q="+path(plan.recordId())));
                 }
             }
+        }
+        if (focus) {
+            var coverage=new LinkedHashMap<String,Object>(mapper.monitoringCoverage(focusedIds,plan.workFilter()));
+            coverage.put("scope_bridge_count",focusedIds.size());
+            coverage.put("说明","配置数为当前快照；读数条数包含来源非数值记录，不等于有效分析样本数。有历史读数不等于当前在线，未提供预期采样频率，不计算缺测率。未逐桥读取报告正文，未执行全库质量审计。");
+            data.put("监测数据覆盖",coverage);
+            refs.add(new Reference("E"+(refs.size()+1),"本次监测数据覆盖统计及筛选范围",bridgeId==null?"/screen":"/bridges/"+path(bridgeId)));
+            if(topic.equals("maintenance_plan")) {
+                var groups=mapper.maintenancePriorities(focusedIds,"defects",plan.workFilter());
+                var candidates=mapper.maintenanceCandidates(focusedIds,"defects",plan.workFilter());
+                data.put("养护编排",Map.of("分组统计",groups,"核查候选",candidates.stream().map(this::project).toList(),"候选上限",5,
+                        "分组口径","按同一病害记录的来源程度和状态交叉分组，分组互斥、合计为病害总数。verify_severe=严重/紧急且未标记完成或验收（含未知或暂不处理）；follow_pending=其余待处理/处理中/列入计划；verify_closure=来源完成/已验收；review_deferred=其余暂不处理；complete_status=其余状态缺失/未知。是资料核查顺序，不是当前工程风险排名。候选只列最多5条，不能代表全部待办。",
+                        "输出要求","生成可讨论的养护工作建议草案：现状依据、分阶段任务、建议负责角色、完成凭证、待补资料。区分已有事实与拟议动作，不能把建议写成已批准或已执行方案，不自动写入任务。具体工法、材料、交通管制、预算与工期须由专业单位依据现场资料另行确定。"));
+                for(var c:candidates)refs.add(new Reference("E"+(refs.size()+1),c.bridgeName()+" · 养护核查候选 · "+c.id(),"/bridges/"+path(c.bridgeId())+"/records?kind=defects&q="+path(c.id())));
+            }
+            data.put("综合查询边界","本轮覆盖档案/评价、巡检、病害、维修、监测配置及历史读数覆盖。没有检索历史报警明细或报告正文，不能将其描述为零或正常。病害状态是来源记录状态；维修记录多或编号匹配都不能直接证明闭环。");
         }
         if (topic.equals("alarms")) {
             var wf=plan.workFilter();
