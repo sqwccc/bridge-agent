@@ -21,6 +21,8 @@ test("真实Dify答案在完成前逐段显示", async ({ page }) => {
   });
   const completed = await page.locator(".agent-answer").innerText();
   expect(completed.length).toBeGreaterThan(partial.length);
+  await expect(page.locator(".agent-source")).toHaveText("Dify 模型回答");
+  await expect(page.locator(".agent-chart")).toBeVisible();
   await expect(page.locator(".agent-totals")).toContainText("131");
   await expect(page.locator(".agent-answer")).toContainText("131");
   await page.screenshot({

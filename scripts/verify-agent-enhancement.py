@@ -82,9 +82,54 @@ def main():
         model = ask(question, "bridge", bridge, mode="auto")
         assert event(model, "plan")["monitoring"]["analysis"] == "trend"
         assert [e["data"]["engine"] for e in model if e["event"] == "source"] == ["model"], "Model fell back to rules"
+        assert event(model, "evidence")["data"]["监测分析"] == analysis
         result["model"] = model
+        def model_case(name, text, expected_analysis, conversation=None):
+            events = ask(text, "bridge", bridge, conversation=conversation, mode="auto")
+            result.setdefault("modelCases", {})[name] = events
+            # Keep diagnostic evidence even if a later case fails. Never include credentials.
+            (ROOT / "runtime/agent-enhancement-evidence.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+            assert event(events, "plan")["monitoring"]["analysis"] == expected_analysis, name
+            assert [e["data"]["engine"] for e in events if e["event"] == "source"] == ["model"], name + ": model fell back"
+            assert any(e["event"] == "delta" and e["data"].get("text") for e in events), name + ": no model text"
+            return events
+
+        why = model_case("followup", "为什么", "trend", event(model, "meta")["conversationId"])
+        assert event(why, "evidence") == event(model, "evidence"), "Explanation must reuse evidence"
+        no_data = model_case("empty", f"设备 {device}，趋势，2099-01-01T00:00至2099-01-02T00:00", "trend")
+        assert event(no_data, "evidence")["data"]["监测分析"]["channels"][0]["statistics"]["status"] == "no_data"
+        assert not any(e["event"] == "visualization" for e in no_data)
+        for name, word in [("thresholds", "阈值"), ("quality", "数据质量"), ("anomaly", "异常点")]:
+            events = model_case(name, question.replace("，趋势，", f"，{word}，"), name)
+            if name == "thresholds":
+                assert event(events, "visualization")["type"] == "table"
+            else:
+                assert event(events, "evidence")["data"]["监测分析"]["channels"][0]["statistics"] == channel["statistics"]
+        metric = channel["point"]["metric"]
+        with connect() as db:
+            # The shared CTE contains literal LIKE '%' patterns; escape only that
+            # trusted SQL fragment when adding psycopg's positional parameters.
+            second = db.execute(base.replace("%", "%%") + """ SELECT s.sbbsm FROM dwd_ql_jc_jcz_inc s
+                JOIN point_bridge p ON p.bsm=s.dwbsm AND p.sscsdm=s.sscsdm
+                WHERE p.bridge_id=%s AND s.jczb=%s AND s.sbbsm<>%s AND coalesce(s.sjtbzt,'')!='D'
+                AND s.jccjsj BETWEEN %s AND %s GROUP BY s.sbbsm HAVING count(*) BETWEEN 6 AND 2000
+                ORDER BY count(*) DESC,s.sbbsm LIMIT 1""", (bridge, metric, device, start, end)).fetchone()
+        assert second, "No second same-metric source channel for comparison acceptance"
+        pair = f"设备 {device}、{second[0]}，{{kind}}，{start.isoformat(timespec='seconds')}至{end.isoformat(timespec='seconds')}"
+        comparison = model_case("compare", pair.format(kind="峰值对比"), "compare")
+        assert event(comparison, "visualization")["type"] == "bar"
+        assert len(event(comparison, "visualization")["rows"]) == 2
+        correlated = model_case("correlation", pair.format(kind="相关性"), "correlation")
+        correlation = event(correlated, "evidence")["data"]["监测分析"]["correlation"]
+        if correlation["status"] == "available":
+            assert event(correlated, "visualization")["type"] == "scatter"
+            assert correlation["pairedCount"] >= 6 and -1 <= correlation["r"] <= 1
+        else:
+            assert "r" not in correlation
+            assert not any(e["event"] == "visualization" for e in correlated)
     (ROOT / "runtime/agent-enhancement-evidence.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps({"passed": True, "networkTotal": summary["total"], "sourceSampleCount": count, "modelVerified": options.model}))
+    print(json.dumps({"passed": True, "networkTotal": summary["total"], "sourceSampleCount": count, "modelVerified": options.model,
+                      "additionalModelCases": list(result.get("modelCases", {}))}))
 
 
 if __name__ == "__main__":

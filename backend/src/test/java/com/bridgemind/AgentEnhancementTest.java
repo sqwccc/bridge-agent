@@ -52,6 +52,7 @@ class AgentEnhancementTest {
         when(service.samples(any(),any(),any(),any(),any(),any())).thenReturn(Map.of("items",List.of(sample(0,1.0)),"truncated",true));
         var truncated=analysis.analyze("bridge",new MonitoringQuery("trend",List.of("d"),"",null,null));
         assertEquals("range_too_large",truncated.get("status"));assertFalse(truncated.toString().contains("statistics"));
+        assertTrue(truncated.get("limitations").toString().contains("未验证其在历史时段是否生效"));
     }
     @Test void rulesFailClosedOnUnrecognizedConditionsAndRetainExplicitFollowup(){
         assertEquals("clarification_required",AgentRules.classify("南京严重病害", "network",null).route());

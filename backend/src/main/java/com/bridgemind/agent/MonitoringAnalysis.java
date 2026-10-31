@@ -20,7 +20,7 @@ public class MonitoringAnalysis {
         result.put("from", from); result.put("to", to); result.put("timezone", "Asia/Shanghai");
         result.put("analysis", query.analysis()); result.put("bridgeId", bridge);
         result.put("source", "现有监测数据库，只读查询");
-        result.put("limitations", "独立阈值区间仅作比较；边界包含规则未定义，不重新生成报警。统计异常不等于结构异常，相关不等于因果。未提供预期采样频率，不计算缺测率。");
+        result.put("limitations", "阈值配置为当前最新有效快照，不受读数起止时间筛选，未验证其在历史时段是否生效。独立阈值区间仅作参考比较；边界包含规则未定义，不重新生成报警。统计异常不等于结构异常，相关不等于因果。未提供预期采样频率，不计算缺测率。");
         var selected = new LinkedHashSet<MonitorPointResponse>();
         var pool = all.stream().filter(p -> query.metric().isBlank() || query.metric().equals(p.metric())
                 || query.metric().equals(p.metricName())
