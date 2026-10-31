@@ -2217,3 +2217,41 @@ body:has(.dashboard-page) {
   font-size: 25px;
   color: #35d3ea;
 }
+.agent-chart {
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid rgba(64, 150, 235, 0.3);
+  border-radius: 6px;
+  min-width: 0;
+}
+.agent-chart figcaption p {
+  margin: 6px 0;
+}
+.agent-chart table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.agent-chart th,
+.agent-chart td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid rgba(64, 150, 235, 0.2);
+}
+.agent-chart .recharts-cartesian-axis-tick-value {
+  fill: #a7bed4;
+}
+.agent-chart .recharts-default-tooltip {
+  color: #172c40;
+}
+.agent-source {
+  display: block;
+  margin: 8px 0;
+  color: #91c5dd;
+}
+.agent-chat select {
+  background: #102638;
+  color: #d5e9f6;
+  border: 1px solid #30566f;
+  padding: 6px;
+  border-radius: 4px;
+}

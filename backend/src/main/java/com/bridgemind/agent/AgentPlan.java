@@ -6,7 +6,11 @@ import java.util.*;
 
 /** Model output is a proposal, never SQL or an executable instruction. */
 public record AgentPlan(String route, String topic, BridgeFilter bridgeFilter, WorkFilter workFilter,
-                        String recordId, String level, String clarification) {
+                        String recordId, String level, String clarification, MonitoringQuery monitoring) {
+    public AgentPlan(String route, String topic, BridgeFilter bridgeFilter, WorkFilter workFilter,
+                     String recordId, String level, String clarification) {
+        this(route, topic, bridgeFilter, workFilter, recordId, level, clarification, null);
+    }
     public AgentPlan {
         if (!Set.of("business_query", "domain_knowledge", "greeting_help", "unsupported", "out_of_scope", "clarification_required").contains(route))
             throw new IllegalArgumentException("问题分类无效，请明确问题后重试");
@@ -19,5 +23,6 @@ public record AgentPlan(String route, String topic, BridgeFilter bridgeFilter, W
         level = level == null ? "" : level;
         if (recordId.length() > 100 || !Set.of("", "1", "2", "3").contains(level)) throw new IllegalArgumentException("查询参数无效");
         if (clarification != null && clarification.length() > 500) throw new IllegalArgumentException("澄清文本过长");
+        if (monitoring != null && !topic.equals("monitoring")) throw new IllegalArgumentException("监测分析参数只能用于监测主题");
     }
 }

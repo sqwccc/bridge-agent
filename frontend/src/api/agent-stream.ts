@@ -36,7 +36,8 @@ export async function readAgentStream(
         buffer = buffer.slice(end + 2);
         if (terminal) break;
       }
-      if (buffer.length > 1_000_000) throw new Error("响应超过限制");
+      // A bounded monitoring evidence event can contain four 2000-sample channels.
+      if (buffer.length > 4_000_000) throw new Error("响应超过限制");
       if (done) {
         if (!terminal) throw new Error("连接已中断，回答未完成");
         break;

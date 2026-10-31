@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../../api/client";
 import { streamAgent } from "../../api/agent-stream";
+import { AgentChart, type Visualization } from "./AgentChart";
 
 type Reference = { id: string; label: string; url: string };
 type Message = {
@@ -12,6 +13,8 @@ type Message = {
   answer: string;
   status: string;
   error?: string;
+  source?: string;
+  chart?: Visualization;
   evidence?: { data: Record<string, unknown>; references: Reference[] };
   plan?: Record<string, unknown>;
 };
@@ -115,6 +118,7 @@ export function BridgeAgent({
   const [question, setQuestion] = useState(initialQuestion);
   const [messages, setMessages] = useState<Message[]>([]);
   const [pending, setPending] = useState(false);
+  const [answerMode, setAnswerMode] = useState<"auto" | "rule">("auto");
   const controller = useRef<AbortController | null>(null);
   const conversation = useRef<string | undefined>(undefined);
   const sequence = useRef(0);
@@ -123,8 +127,22 @@ export function BridgeAgent({
   const status = useQuery({
     queryKey: ["agent-status"],
     queryFn: () =>
-      api<{ configured: boolean; dataMode: string }>("agent/status"),
+      api<{
+        configured: boolean;
+        dataMode: string;
+        ruleAvailable?: boolean;
+        enhanced?: boolean;
+      }>("agent/status"),
   });
+  const available = Boolean(
+    status.data?.configured || status.data?.ruleAvailable,
+  );
+  const scopeKey = JSON.stringify([bridgeId, pageFilters]);
+  useEffect(() => {
+    controller.current?.abort();
+    conversation.current = undefined;
+    setMessages([]);
+  }, [scopeKey]);
   useEffect(() => () => controller.current?.abort(), []);
   useEffect(() => {
     if (follow.current && viewport.current)
@@ -155,6 +173,7 @@ export function BridgeAgent({
             Object.entries(pageFilters).filter(([, value]) => value !== ""),
           ),
           conversationId: conversation.current,
+          answerMode,
         },
         abort.signal,
         ({ event, data }) => {
@@ -163,6 +182,13 @@ export function BridgeAgent({
           if (event === "status")
             update(id, (m) => ({ ...m, status: String(data.message) }));
           if (event === "plan") update(id, (m) => ({ ...m, plan: data }));
+          if (event === "source")
+            update(id, (m) => ({ ...m, source: String(data.message) }));
+          if (event === "visualization")
+            update(id, (m) => ({
+              ...m,
+              chart: data as unknown as Visualization,
+            }));
           if (event === "evidence")
             update(id, (m) => ({
               ...m,
@@ -196,7 +222,16 @@ export function BridgeAgent({
     }
   }
   const presets = bridgeId
-    ? ["桥梁概况", "主要病害", "维修情况", "巡检情况", "历史报警", "报告目录"]
+    ? [
+        "桥梁概况",
+        "主要病害",
+        "维修情况",
+        "巡检情况",
+        "历史报警",
+        "报告目录",
+        "监测配置",
+        "使用帮助",
+      ]
     : [
         "接入桥梁概况",
         "各地市接入桥梁数量对比",
@@ -206,12 +241,29 @@ export function BridgeAgent({
   return (
     <section className="bridge-agent agent-chat">
       <h2>{bridgeId ? "单桥智能问答" : "智能问答"}</h2>
+      {status.data?.ruleAvailable && (
+        <label>
+          回答方式{" "}
+          <select
+            aria-label="回答方式"
+            value={answerMode}
+            disabled={pending}
+            onChange={(e) => setAnswerMode(e.target.value as "auto" | "rule")}
+          >
+            <option value="auto">自动（模型不可用时使用规则）</option>
+            <option value="rule">规则回答</option>
+          </select>
+        </label>
+      )}
       {status.data?.dataMode === "demo" && (
         <p>当前使用合成样例，不代表真实桥梁，不向模型提供业务资料。</p>
       )}
       {(status.error || (status.data && !status.data.configured)) && (
         <p role="alert">
-          {status.error?.message || "尚未配置 Dify 问题分类和回答应用。"}
+          {status.error?.message ||
+            (status.data?.ruleAvailable
+              ? "Dify 尚未完整配置，可以使用规则回答。"
+              : "尚未配置 Dify 问题分类和回答应用。")}
           <button onClick={() => void status.refetch()}>刷新配置状态</button>
         </p>
       )}
@@ -219,7 +271,7 @@ export function BridgeAgent({
         {presets.map((text) => (
           <button
             key={text}
-            disabled={pending || !status.data?.configured}
+            disabled={pending || !available}
             onClick={() => void ask(text)}
           >
             {text}
@@ -249,6 +301,7 @@ export function BridgeAgent({
             {m.plan && (
               <small>{routeLabels[String(m.plan.route)] || "问题解析"}</small>
             )}
+            {m.source && <small className="agent-source">{m.source}</small>}
             {m.evidence && <EvidenceTotals data={m.evidence.data} />}
             <div className="agent-answer">
               <ReactMarkdown
@@ -261,6 +314,7 @@ export function BridgeAgent({
                 {m.answer}
               </ReactMarkdown>
             </div>
+            {m.chart && <AgentChart chart={m.chart} />}
             <p className="agent-progress" role="status">
               {m.status}
             </p>
@@ -311,14 +365,14 @@ export function BridgeAgent({
               !e.nativeEvent.isComposing
             ) {
               e.preventDefault();
-              if (!pending && status.data?.configured) void ask(question);
+              if (!pending && available) void ask(question);
             }
           }}
         />
         <div className="agent-controls">
           <button
             type="submit"
-            disabled={pending || !status.data?.configured || !question.trim()}
+            disabled={pending || !available || !question.trim()}
           >
             发送问题
           </button>

@@ -116,6 +116,55 @@ test("未配置时禁止提交", async ({ page }) => {
   await expect(page.getByRole("alert")).toContainText("尚未配置 Dify");
 });
 
+test("规则模式无需模型配置，显示图表并替换中断模型文字", async ({ page }) => {
+  await page.route("**/agent/status", (route) =>
+    route.fulfill({
+      json: {
+        code: "OK",
+        data: { configured: false, ruleAvailable: true, dataMode: "source" },
+      },
+    }),
+  );
+  await page.route("**/agent/ask", (route) => {
+    expect(route.request().postDataJSON().answerMode).toBe("rule");
+    return route.fulfill({
+      contentType: "text/event-stream",
+      body:
+        frame("meta", { conversationId: "rules" }) +
+        frame("visualization", {
+          type: "bar",
+          title: "各地市接入桥梁数量",
+          scope: "当前接入范围",
+          period: "当前快照",
+          source: "后端全量统计",
+          truncated: false,
+          series: [{ key: "value", label: "桥梁数", unit: "座" }],
+          rows: [{ name: "南京", value: 5 }],
+        }) +
+        frame("delta", { text: "未完成文字" }) +
+        frame("source", { engine: "rule", message: "规则回答" }) +
+        frame("replace", { text: "**结论**：当前接入5座桥梁。" }) +
+        frame("done", {}),
+    });
+  });
+  await page.goto("/screen");
+  await page.getByRole("button", { name: "打开总体问答" }).click();
+  await page.getByLabel("回答方式").selectOption("rule");
+  await page.getByRole("button", { name: "接入桥梁概况", exact: true }).click();
+  await expect(page.locator(".agent-answer")).toContainText("当前接入5座桥梁");
+  await expect(page.locator(".agent-answer")).not.toContainText("未完成文字");
+  await expect(page.locator(".agent-source")).toHaveText("规则回答");
+  await expect(
+    page.getByRole("figure", { name: "各地市接入桥梁数量" }),
+  ).toBeVisible();
+  await page.getByText("查看图表数据与单位", { exact: true }).click();
+  await expect(page.locator(".agent-chart table")).toContainText("南京");
+  await page.screenshot({
+    path: "../runtime/agent-enhancement-ui.png",
+    fullPage: true,
+  });
+});
+
 test("用户可以停止未完成请求", async ({ page }) => {
   await page.route("**/agent/ask", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 2500));
