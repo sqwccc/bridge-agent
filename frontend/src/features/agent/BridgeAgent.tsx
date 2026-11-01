@@ -306,6 +306,15 @@ export function BridgeAgent({
               <small>{routeLabels[String(m.plan.route)] || "问题解析"}</small>
             )}
             {m.source && <small className="agent-source">{m.source}</small>}
+            {m.evidence?.data["资料缓存"] != null && (
+              <small className="agent-evidence-time">
+                资料查询时间：
+                {String(m.evidence.data["查询时间"])
+                  .split("[")[0]
+                  .replace("T", " ")}
+                ；相同条件的资料最多复用30秒。
+              </small>
+            )}
             {m.evidence && <EvidenceTotals data={m.evidence.data} />}
             <div className="agent-answer">
               <ReactMarkdown

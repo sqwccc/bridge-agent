@@ -26,15 +26,26 @@ public class AgentEvidence {
     private final MonitoringService monitoring;
     private final ReportService reports;
     private final JsonMapper json;
+    private final AgentFocusQueries focusQueries;
+    private final AgentMaintenanceCache maintenanceCache;
     public AgentEvidence(BridgeService bridges, DashboardService dashboard, AgentMapper mapper, WorkService work,
-                         AlarmService alarms, MonitoringService monitoring, ReportService reports, JsonMapper json) {
+                         AlarmService alarms, MonitoringService monitoring, ReportService reports, JsonMapper json,
+                         AgentFocusQueries focusQueries,AgentMaintenanceCache maintenanceCache) {
         this.bridges=bridges; this.dashboard=dashboard; this.mapper=mapper; this.work=work;
         this.alarms=alarms; this.monitoring=monitoring; this.reports=reports; this.json=json;
+        this.focusQueries=focusQueries;this.maintenanceCache=maintenanceCache;
     }
     public record Reference(String id, String label, String url) {}
     public record Evidence(Map<String,Object> data, List<Reference> references) {}
     public static String path(String id) { return URLEncoder.encode(id, StandardCharsets.UTF_8); }
     public Evidence build(AgentPlan plan, String bridgeId, boolean demo) {
+        if(!demo && plan.route().equals("business_query") && plan.topic().equals("maintenance_plan")) {
+            if(bridgeId!=null)bridges.requireExists(bridgeId);
+            return maintenanceCache.get(plan,bridgeId,()->buildUncached(plan,bridgeId,false));
+        }
+        return buildUncached(plan,bridgeId,demo);
+    }
+    private Evidence buildUncached(AgentPlan plan, String bridgeId, boolean demo) {
         var data = new LinkedHashMap<String,Object>();
         var refs = new ArrayList<Reference>();
         data.put("数据模式", demo ? "合成联调样例，不代表真实桥梁" : "业务数据库只读查询");
@@ -109,6 +120,7 @@ public class AgentEvidence {
         }
         var kinds = focus?List.of("patrols","defects","maintenance"):topic.equals("overview") && bridgeId != null ? List.of("defects","maintenance") :
                 Set.of("patrols","defects","maintenance").contains(topic) ? List.of(topic) : List.<String>of();
+        var focused=focus?focusQueries.load(focusedIds,plan.workFilter(),topic.equals("maintenance_plan")):null;
         if (!kinds.isEmpty()) {
             var ids = focus?focusedIds:bridgeId != null ? List.of(bridgeId) : bridges.all(filter).stream().map(b -> b.id()).toList();
             for (String kind : kinds) {
@@ -119,8 +131,8 @@ public class AgentEvidence {
                 if(focus)dimensions=kind.equals("defects")?Set.of("total","zone","status","severity","damageType"):
                         kind.equals("maintenance")?Set.of("total","status","maintenanceType"):Set.of("total","resultProvided");
                 var selectedDimensions=dimensions;
-                var summary = mapper.summary(ids,kind,wf).stream().filter(row->selectedDimensions.contains(row.get("dimension"))).toList();
-                var examples = mapper.examples(ids,kind,wf).stream().limit(focus?3:10).toList();
+                var summary = focus?focused.businesses().get(kind).summary():mapper.summary(ids,kind,wf).stream().filter(row->selectedDimensions.contains(row.get("dimension"))).toList();
+                var examples = focus?focused.businesses().get(kind).examples():mapper.examples(ids,kind,wf).stream().limit(10).toList();
                 String aggregateRef="E"+(refs.size()+1);
                 if(focus)refs.add(new Reference(aggregateRef,"本次"+kind+"全量统计（当前范围及日期）",bridgeId==null?"/screen":"/bridges/"+path(bridgeId)));
                 data.put(kind, focus?Map.of("全量聚合",summary,"聚合引用",aggregateRef,"最新样本",examples.stream().map(this::project).toList(),"样本上限",3):
@@ -137,14 +149,14 @@ public class AgentEvidence {
             }
         }
         if (focus) {
-            var coverage=new LinkedHashMap<String,Object>(mapper.monitoringCoverage(focusedIds,plan.workFilter()));
+            var coverage=new LinkedHashMap<String,Object>(focused.coverage());
             coverage.put("scope_bridge_count",focusedIds.size());
             coverage.put("说明","配置数为当前快照；读数条数包含来源非数值记录，不等于有效分析样本数。有历史读数不等于当前在线，未提供预期采样频率，不计算缺测率。未逐桥读取报告正文，未执行全库质量审计。");
             data.put("监测数据覆盖",coverage);
             refs.add(new Reference("E"+(refs.size()+1),"本次监测数据覆盖统计及筛选范围",bridgeId==null?"/screen":"/bridges/"+path(bridgeId)));
             if(topic.equals("maintenance_plan")) {
-                var groups=mapper.maintenancePriorities(focusedIds,"defects",plan.workFilter());
-                var candidates=mapper.maintenanceCandidates(focusedIds,"defects",plan.workFilter());
+                var groups=focused.businesses().get("defects").groups();
+                var candidates=focused.businesses().get("defects").candidates();
                 data.put("养护编排",Map.of("分组统计",groups,"核查候选",candidates.stream().map(this::project).toList(),"候选上限",5,
                         "分组口径","按同一病害记录的来源程度和状态交叉分组，分组互斥、合计为病害总数。verify_severe=严重/紧急且未标记完成或验收（含未知或暂不处理）；follow_pending=其余待处理/处理中/列入计划；verify_closure=来源完成/已验收；review_deferred=其余暂不处理；complete_status=其余状态缺失/未知。是资料核查顺序，不是当前工程风险排名。候选只列最多5条，不能代表全部待办。",
                         "输出要求","生成可讨论的养护工作建议草案：现状依据、分阶段任务、建议负责角色、完成凭证、待补资料。区分已有事实与拟议动作，不能把建议写成已批准或已执行方案，不自动写入任务。具体工法、材料、交通管制、预算与工期须由专业单位依据现场资料另行确定。"));

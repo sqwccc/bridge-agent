@@ -21,6 +21,12 @@ for (const scope of ["network", "bridge"]) {
       const topic =
         body.question === "整体数据情况" ? "data_overview" : "maintenance_plan";
       const events = results[`${scope}_${topic}`];
+      if (topic === "maintenance_plan") {
+        const evidence = events.find(
+          (e: { event: string }) => e.event === "evidence",
+        );
+        evidence.data.data["资料缓存"] = { 有效秒数: 30 };
+      }
       return route.fulfill({
         contentType: "text/event-stream",
         body: events
@@ -48,6 +54,14 @@ for (const scope of ["network", "bridge"]) {
       await expect(page.locator(".agent-answer").last()).toContainText(
         question === "整体数据情况" ? "巡检" : "验收",
       );
+      if (question === "养护方案") {
+        await expect(page.locator(".agent-evidence-time").last()).toContainText(
+          "资料查询时间",
+        );
+        await expect(page.locator(".agent-evidence-time").last()).toContainText(
+          "最多复用30秒",
+        );
+      }
     }
     await page.screenshot({
       path: `../runtime/agent-focus-${scope}.png`,

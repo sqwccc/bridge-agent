@@ -45,25 +45,56 @@
             WHEN r.status IN (1,2,3) THEN 1 WHEN r.status IS NULL THEN 2 ELSE 3 END,
             r.occurred_at DESC NULLS LAST,r.id LIMIT 5
     </select>
-    <select id="summary" resultType="map" timeout="30">
+    <sql id="summaryQuery">
         <include refid="com.bridgemind.work.mapper.WorkMapper.base"/>,
         matched AS MATERIALIZED (SELECT * FROM records r <include refid="com.bridgemind.work.mapper.WorkMapper.filter"/>)
+        <include refid="summaryRows"/>
+    </sql>
+    <sql id="summaryRows">
         SELECT 'total' AS dimension,'all' AS code,count(*) AS count,min(occurred_at)::text AS first_date,
             max(occurred_at)::text AS last_date,max(source_updated_at)::text AS latest_sync FROM matched
         UNION ALL
         SELECT d.dimension,d.code,count(*),NULL,NULL,NULL FROM matched r
         CROSS JOIN LATERAL (VALUES
-            ('city',r.city_code),('zone',coalesce(r.zone::text,'missing')),
-            ('status',coalesce(r.status::text,'missing')),('severity',coalesce(r.severity::text,'missing')),
-            ('damageType',coalesce(r.damage_type::text,'missing')),('maintenanceType',coalesce(r.maintenance_type::text,'missing')),
-            ('month',coalesce(to_char(r.occurred_at,'YYYY-MM'),'missing')),
-            ('resultProvided',CASE WHEN nullif(trim(r.result),'') IS NULL THEN 'no' ELSE 'yes' END)
+        <trim suffixOverrides=",">
+            <if test="_parameter.containsKey('dimensions') and dimensions.contains('maintenancePriority')">('maintenancePriority',<include refid="maintenancePriority"/>),</if>
+            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('city')">('city',r.city_code),</if>
+            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('zone')">('zone',coalesce(r.zone::text,'missing')),</if>
+            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('status')">('status',coalesce(r.status::text,'missing')),</if>
+            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('severity')">('severity',coalesce(r.severity::text,'missing')),</if>
+            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('damageType')">('damageType',coalesce(r.damage_type::text,'missing')),</if>
+            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('maintenanceType')">('maintenanceType',coalesce(r.maintenance_type::text,'missing')),</if>
+            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('month')">('month',coalesce(to_char(r.occurred_at,'YYYY-MM'),'missing')),</if>
+            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('resultProvided')">('resultProvided',CASE WHEN nullif(trim(r.result),'') IS NULL THEN 'no' ELSE 'yes' END),</if>
+        </trim>
         ) d(dimension,code) GROUP BY d.dimension,d.code ORDER BY dimension,code
+    </sql>
+    <select id="summary" resultType="map" timeout="30"><include refid="summaryQuery"/></select>
+    <!-- One latest-version/ownership scan per business. Aggregates and samples share matched. -->
+    <select id="focusSnapshot" resultType="map" timeout="30">
+        <include refid="com.bridgemind.work.mapper.WorkMapper.base"/>,
+        matched AS MATERIALIZED (SELECT * FROM records r <include refid="com.bridgemind.work.mapper.WorkMapper.filter"/>),
+        summary_rows AS (<include refid="summaryRows"/>),
+        example_rows AS (SELECT * FROM matched r ORDER BY r.occurred_at DESC NULLS LAST,r.id LIMIT 3),
+        candidate_rows AS (
+            SELECT * FROM matched r
+            WHERE <choose><when test="kind == 'defects' and dimensions.contains('maintenancePriority')">TRUE</when><otherwise>FALSE</otherwise></choose>
+            ORDER BY CASE WHEN r.severity IN (4,5) AND (r.status IS NULL OR r.status NOT IN (4,5)) THEN 0
+                WHEN r.status IN (1,2,3) THEN 1 WHEN r.status IS NULL THEN 2 ELSE 3 END,
+                r.occurred_at DESC NULLS LAST,r.id LIMIT 5
+        )
+        SELECT coalesce((SELECT json_agg(s ORDER BY dimension,code) FROM summary_rows s),'[]'::json)::text AS summary,
+            coalesce((SELECT json_agg(e ORDER BY e.occurred_at DESC NULLS LAST,e.id) FROM example_rows e),'[]'::json)::text AS examples,
+            coalesce((SELECT json_agg(c ORDER BY
+                CASE WHEN c.severity IN (4,5) AND (c.status IS NULL OR c.status NOT IN (4,5)) THEN 0
+                    WHEN c.status IN (1,2,3) THEN 1 WHEN c.status IS NULL THEN 2 ELSE 3 END,
+                c.occurred_at DESC NULLS LAST,c.id) FROM candidate_rows c),'[]'::json)::text AS candidates
     </select>
-    <select id="examples" resultType="com.bridgemind.work.model.WorkRecord" timeout="30">
+    <sql id="examplesQuery">
         <include refid="com.bridgemind.work.mapper.WorkMapper.base"/>
         SELECT <include refid="com.bridgemind.work.mapper.WorkMapper.fields"/>,NULL::bigint AS matching_total
         FROM records r <include refid="com.bridgemind.work.mapper.WorkMapper.filter"/>
         ORDER BY r.occurred_at DESC NULLS LAST,r.id LIMIT 10
-    </select>
+    </sql>
+    <select id="examples" resultType="com.bridgemind.work.model.WorkRecord" timeout="30"><include refid="examplesQuery"/></select>
 </mapper>
