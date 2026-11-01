@@ -1,12 +1,12 @@
 import { test, expect } from "@playwright/test";
 import { nowInShanghai } from "../src/features/monitoring/displayDate";
 
-test("横轴延伸至当前时间，最后一条记录之后保留空白", async ({ page }) => {
+test("横轴随当前时间推进，曲线持续补点", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-11-01T14:26:00Z"));
   await page.goto("/bridges/10905200071");
   const row = page.locator(".metric-row").first();
   await expect(row.locator(".chart-box")).toBeVisible();
-  await expect(row.locator(".chart-box")).toContainText("11-01 00:00");
+  await expect(row.locator(".chart-box")).toContainText("11-01 22:16");
   await expect(row.locator(".chart-box")).toContainText("11-01 22:26");
   const blank = await row.evaluate((el) => {
     const curve = el.querySelector<SVGPathElement>(".recharts-line-curve")!;
@@ -16,7 +16,15 @@ test("横轴延伸至当前时间，最后一条记录之后保留空白", async
     const box = curve.getBBox();
     return end[end.length - 1].x1.baseVal.value - (box.x + box.width);
   });
-  expect(blank).toBeGreaterThan(5);
+  expect(Math.abs(blank)).toBeLessThan(2);
+  const before = await row.locator(".recharts-line-curve").getAttribute("d");
+  await page.clock.setFixedTime(new Date("2026-11-01T14:27:00Z"));
+  await expect(row.locator(".chart-box")).toContainText("11-01 22:27");
+  await expect
+    .poll(() => row.locator(".recharts-line-curve").getAttribute("d"))
+    .not.toBe(before);
+  await expect(row).toContainText("曲线点");
+  await row.screenshot({ path: "../runtime/monitoring-streaming.png" });
 });
 
 test("缓慢往返滚动，悬停暂停，移开立即继续且到底不跳转", async ({ page }) => {
@@ -66,7 +74,7 @@ test("默认最近有数据日，指标独立滚动，历史查询可恢复", as
     list.locator(".metric-row").first().locator(".chart-box"),
   ).toBeVisible();
   await expect(list.locator(".monitor-meta").first()).toContainText(
-    `${nowInShanghai().slice(0, 10)} 00:00 至 ${nowInShanghai().slice(0, 10)}`,
+    `${nowInShanghai().slice(0, 10)}`,
   );
   expect(samples[0].searchParams.get("from")).toBe("2026-10-22T00:00");
   expect(await list.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(

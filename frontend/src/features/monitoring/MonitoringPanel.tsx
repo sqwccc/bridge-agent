@@ -18,7 +18,8 @@ import type { MonitorPoint, Sample, Threshold } from "../../api/types";
 import { time, num } from "../../api/types";
 import { Empty, ErrorState, Panel } from "../shared/ui";
 import { useAutoScroll } from "./useAutoScroll";
-import { nowInShanghai, samplesUntilNow } from "./displayDate";
+import { nowInShanghai } from "./displayDate";
+import { streamingCurve, STREAM_WINDOW_MS } from "./streamingCurve";
 
 type Range = { from: string; to: string };
 type Latest = Pick<MonitorPoint, "pointId" | "deviceId" | "metric"> & {
@@ -116,7 +117,7 @@ export function MonitoringPanel({ bridgeId }: { bridgeId: string }) {
   return (
     <Panel
       title="监测数据曲线"
-      note="按指标分行 · 来源实测"
+      note={range ? "按指标分行 · 来源实测" : "按指标分行 · 历史数据驱动"}
       className="monitor-panel"
     >
       {filtered && (
@@ -298,7 +299,14 @@ function MetricRow({
     explicitRange ||
     (range
       ? {
-          from: `${displayTime.slice(0, 10)}T00:00`,
+          from: nowInShanghai(
+            new Date(
+              Math.max(
+                Date.parse(`${displayTime.slice(0, 10)}T00:00:00+08:00`),
+                Date.parse(displayTime + "+08:00") - STREAM_WINDOW_MS,
+              ),
+            ),
+          ),
           to: displayTime,
         }
       : null);
@@ -329,7 +337,7 @@ function MetricRow({
   });
   const displayItems = explicitRange
     ? series.data?.items || []
-    : samplesUntilNow(series.data?.items || [], displayTime);
+    : streamingCurve(series.data?.items || [], displayTime, channelKey(point));
   const axisStart = displayRange ? Date.parse(displayRange.from + "+08:00") : 0;
   const axisEnd = displayRange ? Date.parse(displayRange.to + "+08:00") : 0;
   const axisTicks = [
@@ -498,8 +506,10 @@ function MetricRow({
             </ResponsiveContainer>
           </div>
           <div className="panel-foot">
-            {displayItems.length} 个记录 · 非数值{" "}
-            {displayItems.filter((p) => p.value === null).length} 个
+            {explicitRange
+              ? `${displayItems.length} 个记录`
+              : `历史记录 ${series.data?.items.length ?? 0} 条 · 曲线点 ${displayItems.length} 个`}{" "}
+            · 非数值 {displayItems.filter((p) => p.value === null).length} 个
             {series.data?.truncated && " · 数据超过2000条，请缩小查询范围"}
           </div>
         </>
