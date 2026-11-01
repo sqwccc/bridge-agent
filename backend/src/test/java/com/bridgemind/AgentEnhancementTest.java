@@ -14,6 +14,22 @@ import static org.mockito.Mockito.*;
 class AgentEnhancementTest {
     private static final LocalDateTime START=LocalDateTime.of(2026,10,1,0,0);
     private SampleResponse sample(int minutes,Double value){return new SampleResponse(START.plusMinutes(minutes),Objects.toString(value,"bad"),value);}
+    @Test void maintenanceAdviceUsesThreeStagesAndOnlyMatchingSampleActions(){
+        var json=JsonMapper.builder().build();
+        var data=new HashMap<String,Object>();
+        data.put("重点问答","maintenance_plan");
+        data.put("监测数据覆盖",Map.of("channel_count",10));
+        data.put("养护编排",Map.of("分组统计",List.of(),"核查候选",List.of(Map.of("description","伸缩缝变形、裂缝及石材脱落"))));
+        var answer=AgentPresentation.answer(new AgentEvidence.Evidence(data,List.of()),"维修养护建议",null,json);
+        assertTrue(answer.contains("① 优先复核"));assertTrue(answer.contains("② 近期维修养护"));assertTrue(answer.contains("③ 常规养护"));
+        assertTrue(answer.contains("温度—位移"));assertTrue(answer.contains("观测标志"));assertTrue(answer.contains("前后影像"));
+        assertFalse(answer.contains("0.242"));assertFalse(answer.contains("7 日内"));assertFalse(answer.contains("32 路"));
+        assertFalse(answer.contains("锚头"));
+        data.put("养护编排",Map.of("分组统计",List.of(),"核查候选",List.of()));
+        var empty=AgentPresentation.answer(new AgentEvidence.Evidence(data,List.of()),"养护方案",null,json);
+        assertFalse(empty.contains("温度—位移曲线"));assertFalse(empty.contains("观测标志"));
+        assertEquals("maintenance_plan",AgentRules.classify("维修养护建议","bridge",null).topic());
+    }
     @Test void focusTopicsRetainDatesAndRejectRecordFilters() {
         var first=AgentRules.classify("2026-01-01至2026-10-31整体数据情况","network",null);
         assertEquals("data_overview",first.topic());

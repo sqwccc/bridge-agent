@@ -39,7 +39,7 @@ public final class AgentRules {
         }catch(DateTimeException e){return clarify("日期无法识别，请使用YYYY-MM-DD至YYYY-MM-DD。");}
         String topic=switch(q){
             case "整体数据情况","总体数据情况","整体数据概况","数据总体情况","数据概览","数据整体情况" -> "data_overview";
-            case "养护方案","制定养护方案","生成养护方案","给出养护方案","养护计划","养护建议" -> "maintenance_plan";
+            case "养护方案","制定养护方案","生成养护方案","给出养护方案","养护计划","养护建议","维修养护建议","维修养护方案" -> "maintenance_plan";
             case "接入桥梁概况","桥梁概况","整体状态如何","各地市接入桥梁数量对比","BCI等级分布","BSI等级分布","Ⅱ至Ⅴ类桥梁的BSI等级分布" -> "overview";
             case "主要病害","病害情况","病害主要集中在哪些部位","病害部位分布","病害月度变化" -> "defects";
             case "维修情况","维修月度变化" -> "maintenance";

@@ -28,7 +28,7 @@ recordId仅用于指定单桥业务记录详情，必须从用户明确提供或
 不要编造设备编号或万福大桥构件映射；候选对象由后端按当前桥解析，不唯一会返回候选。网络范围监测需唯一桥名q，否则澄清。峰值比较限同指标同单位；相关性不代表因果。来源阈值是独立区间，边界含义未定，不自动推断报警等级。
 previousValidatedPlans包含最近三轮question、plan、answer摘要和references。继承已确认对象与时间；“那某测点呢”替换targets并保留明确的分析类型和时间；不把上轮答案中的数字当新查询结果。
 JSON示例：{"route":"business_query","topic":"defects","bridgeFilter":{"city":"321000"},"workFilter":{"from":null,"to":null},"recordId":"","level":"","clarification":null,"monitoring":null}
-重点主题（优先于普通概况及施工方案分类）：整体数据情况/总体数据情况/数据概览=data_overview；养护方案/养护计划/养护建议/根据这些数据给出养护方案=maintenance_plan。二者均为business_query，支持当前总体筛选或单桥，是已支持的跨业务聚合。养护方案指基于现有病害和维修记录的养护工作建议草案，不是施工设计，不应拒绝。涉及具体施工参数、预算金额、安全裁决仍不支持。两个主题仅允许桥梁条件与workFilter.from/to，不允许其他业务筛选、recordId、level或monitoring；含这些条件需澄清。追问养护方案继承已确认桥梁范围和日期。
+重点主题（优先于普通概况及施工方案分类）：整体数据情况/总体数据情况/数据概览=data_overview；养护方案/养护计划/养护建议/维修养护建议/维修养护方案/根据这些数据给出养护方案=maintenance_plan。二者均为business_query，支持当前总体筛选或单桥，是已支持的跨业务聚合。养护方案指基于现有病害和维修记录的养护工作建议草案，不是施工设计，不应拒绝。涉及具体施工参数、预算金额、安全裁决仍不支持。两个主题仅允许桥梁条件与workFilter.from/to，不允许其他业务筛选、recordId、level或monitoring；含这些条件需澄清。追问养护方案继承已确认桥梁范围和日期。
 输入上下文：
 {{bridge_context}}
 

@@ -46,6 +46,34 @@ public final class AgentFocusPresentation {
         return new AgentPresentation.Visualization("table",plan?"养护工作建议清单（待复核与审批）":"整体数据情况一览",t(root,"范围说明"),period,"本次后端受控聚合；养护顺序不是风险排名",false,List.copyOf(series),List.copyOf(rows),evidence.references());
     }
     private static String label(String kind){return switch(kind){case "patrols"->"巡检";case "defects"->"病害";default->"维修";};}
+    /** Proposed actions, separate from source facts and historical record status. */
+    private static List<String> maintenanceAdvice(JsonNode root){
+        var lines=new ArrayList<String>();
+        var descriptions=new StringBuilder();
+        for(var list:List.of(root.path("养护编排").path("核查候选"),root.path("defects").path("最新样本")))
+            for(var item:list)for(String field:List.of("description","itemName","damageTypeName","location"))
+                descriptions.append(item.path(field).asText("")).append(' ');
+        String text=descriptions.toString();
+        lines.add("**① 优先复核与处置准备**");
+        lines.add("- 对本轮待核实病害建立专项台账，逐条记录桥梁、部位、发生时间、处理状态与现场照片；先确认历史记录对应的问题是否仍存在，再确定处置优先级。");
+        if(text.matches("(?s).*(支座|伸缩缝|位移|变形).*"))
+            lines.add("- 针对本轮样本涉及的支座、伸缩缝或变形问题，现场复核位移、间隙及限位构造，记录卡阻、脱空、偏位等检查结果；如具备同部位温度和位移序列，再绘制温度—位移曲线辅助复核，不直接认定温度效应或约束异常。");
+        lines.add("**② 近期维修养护**");
+        if(text.contains("裂缝"))
+            lines.add("- 针对本轮裂缝样本，核实位置、宽度及变化记录，设置可追溯观测标志并持续复测；将稳定性、成因和修补措施适用性提交专业复核后确定方案，不仅凭宽度或扩展趋势直接选定封闭、灌浆工法。");
+        if(text.matches("(?s).*(铺装|栏杆|石材|脱落|破损).*"))
+            lines.add("- 针对本轮铺装、栏杆、石材或破损样本，核对松动、脱落部位及影响范围，建立修复清单；经现场确认后安排维修，完成后留存前后影像、复检结果和验收凭证。");
+        lines.add("- 将核实后的待办与现有维修计划逐项关联，明确建议责任角色、计划节点与验收材料，避免重复派工；来源已完成或已验收的记录仍应抽核闭环凭证。");
+        if(root.path("监测数据覆盖").path("channel_count").asLong()>0)
+            lines.add("- 核查监测通道的单位、标定和阈值资料；如确认应变通道量纲异常，完成采集标定与复核后再纳入分析；如确认阈值缺失，按批准的监测方案补齐。本轮覆盖统计未给出异常或缺阈值通道数量，不能据此列出数量。");
+        lines.add("**③ 常规养护与年度跟踪**");
+        if(text.matches("(?s).*(主缆|吊索|索力|锚头).*"))
+            lines.add("- 针对本轮涉及的缆索或锚固部位，核实防腐、锚头及除湿设施的适用性和检查记录；需要索力复核时，先取得索长、线密度、有效索频及方法适用性资料，再由专业人员复算并与批准控制值比对。");
+        lines.add("- 按定检和现场复核结论安排桥面铺装、伸缩缝及适用构件的常规检查，是否更换或修复以确认后的清单为准，不预设已经需要更换。");
+        lines.add("- 归档本年度病害、维修、复检和验收记录；具备可比的跨期监测数据时形成变化曲线，经审核更新构件评价资料，不能把单次快照或来源等级编码直接当作生命周期评分。");
+        lines.add("以上为拟议行动，阶段不等于已批准工期；具体观测周期与完成节点由现场复核和任务审批确定。");
+        return lines;
+    }
     public static String answer(AgentEvidence.Evidence evidence,String question,JsonMapper json){
         var root=json.valueToTree(evidence.data());boolean plan=root.path("重点问答").asText().equals("maintenance_plan");
         var c=root.path("监测数据覆盖");var lines=new ArrayList<String>();
@@ -56,6 +84,7 @@ public final class AgentFocusPresentation {
         for(String kind:List.of("patrols","defects","maintenance")){var s=total(root,kind);lines.add("- "+label(kind)+"："+t(s,"count")+" 条；实际时间 "+t(s,"first_date")+" 至 "+t(s,"last_date")+"；最新来源同步 "+t(s,"latest_sync")+"。");}
         lines.add("- 监测：配置通道 "+t(c,"channel_count")+" 个；有历史读数的桥梁 "+t(c,"bridges_with_readings")+" 座、通道 "+t(c,"channels_with_readings")+" 个；读数 "+t(c,"reading_count")+" 条，实际时间 "+t(c,"first_time")+" 至 "+t(c,"last_time")+"。不能将这些数量作为当前在线数量。");
         if(plan){
+            lines.addAll(maintenanceAdvice(root));
             lines.add("**分阶段任务（建议）**");int i=0;
             for(var task:tasks(root))lines.add(++i+". **"+task.get("name")+"**（匹配来源病害 "+task.get("count")+" 条）："+task.get("action")+" 建议角色："+task.get("role")+"；完成凭证："+task.get("acceptance")+"。");
             var candidates=root.path("养护编排").path("核查候选");

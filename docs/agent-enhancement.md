@@ -93,3 +93,8 @@ Git 分支本身不隔离外部 Dify 应用。本分支现在使用同一 Dify �
 `python scripts/isolate-dify-branch.py` 建立分支应用和本地映射；默认不改原应用；仅显式追加 `--restore-original-prompts` 时执行一次备份恢复，重复执行不再次覆盖原应用。`python scripts/sync-agent-prompts.py --apply-local` 现在只更新当前分支映射中的应用，无映射时拒绝执行。带密钥的映射保存在已忽略的 `runtime/dify-branch-*.json`，不会写入 Git，原 `runtime/dify-account.json` 和 `.env.local` 不改动。
 
 通过 `scripts/start-backend.ps1` 启动时，`LocalEnvironment.ps1` 按当前 Git 分支选择独立 Key。切换分支后需要重启后端；没有映射的旧分支使用原 `.env.local`。旧 `configure-dify.py configure`、`upgrade-dify-agent.py` 属于原应用初始化/迁移工具，本分支日常更新只使用上述分支同步命令，避免操作原应用。此隔离目前针对本机 PowerShell 启动；Docker/部署环境须显式提供对应分支应用的 Key，不能假设 Git 分支自动传递环境变量。
+
+
+### 维修养护行动建议
+
+“养护方案”“维修养护建议”“维修养护方案”采用优先复核、近期维修养护、年度跟踪三阶段表述。根据本轮病害候选和最新样本，加入伸缩缝/位移复核、裂缝观测、栏杆石材修复与验收等具体动作；仅有监测覆盖统计时，对通道标定和阈值补录使用条件式建议，不声称已查到异常数量。具体工法待现场专业复核，默认不指定固定工期；用户要求排期时只给待审批的建议排期。规则回答和分支Dify提示词同步支持，未将独立分析页数据自动作为问答证据。
