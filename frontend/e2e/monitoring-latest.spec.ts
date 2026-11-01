@@ -27,7 +27,7 @@ test("横轴随当前时间推进，曲线持续补点", async ({ page }) => {
   await row.screenshot({ path: "../runtime/monitoring-streaming.png" });
 });
 
-test("缓慢往返滚动，悬停暂停，移开立即继续且到底不跳转", async ({ page }) => {
+test("单向循环滚动，悬停暂停，移开立即继续且到底淡入衔接", async ({ page }) => {
   await page.goto("/bridges/10905200071");
   const list = page.getByRole("region", { name: "监测指标滚动列表" });
   await expect(list.locator(".chart-box").first()).toBeVisible();
@@ -53,12 +53,13 @@ test("缓慢往返滚动，悬停暂停，移开立即继续且到底不跳转",
   ).toHaveCount(0);
   await list.evaluate((e) => e.blur());
   await list.evaluate((e) => (e.scrollTop = e.scrollHeight));
-  const bottom = await list.evaluate((e) => e.scrollTop);
   await page.mouse.move(0, 0);
   await expect
     .poll(() => list.evaluate((e) => e.scrollTop), { timeout: 8000 })
-    .toBeLessThan(bottom - 2);
-  expect(await list.evaluate((e) => e.scrollTop)).toBeGreaterThan(bottom - 60);
+    .toBeLessThan(20);
+  await expect
+    .poll(() => list.evaluate((e) => e.scrollTop))
+    .toBeGreaterThan(20);
 });
 
 test("默认最近有数据日，指标独立滚动，历史查询可恢复", async ({ page }) => {
