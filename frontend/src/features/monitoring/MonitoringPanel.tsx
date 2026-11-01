@@ -18,7 +18,7 @@ import type { MonitorPoint, Sample, Threshold } from "../../api/types";
 import { time, num } from "../../api/types";
 import { Empty, ErrorState, Panel } from "../shared/ui";
 import { useAutoScroll } from "./useAutoScroll";
-import { yesterdayInShanghai } from "./displayDate";
+import { nowInShanghai, samplesUntilNow } from "./displayDate";
 
 type Range = { from: string; to: string };
 type Latest = Pick<MonitorPoint, "pointId" | "deviceId" | "metric"> & {
@@ -39,11 +39,11 @@ function latestDay(timestamp: string): Range {
 
 /** 指标与单位分别分组；仅加载滚动到可见范围的序列，保持缺测断点。 */
 export function MonitoringPanel({ bridgeId }: { bridgeId: string }) {
-  const [displayDate, setDisplayDate] = useState(yesterdayInShanghai);
+  const [displayTime, setDisplayTime] = useState(nowInShanghai);
   useEffect(() => {
     const timer = window.setInterval(
-      () => setDisplayDate(yesterdayInShanghai()),
-      60000,
+      () => setDisplayTime(nowInShanghai()),
+      1000,
     );
     return () => window.clearInterval(timer);
   }, []);
@@ -231,7 +231,7 @@ export function MonitoringPanel({ bridgeId }: { bridgeId: string }) {
               points={list}
               range={range}
               latestByChannel={latestByChannel}
-              displayDate={displayDate}
+              displayTime={displayTime}
               first={i === 0}
             />
           ))
@@ -252,14 +252,14 @@ function MetricRow({
   points,
   range: explicitRange,
   latestByChannel,
-  displayDate,
+  displayTime,
   first,
 }: {
   bridgeId: string;
   points: MonitorPoint[];
   range: Range | null;
   latestByChannel: Map<string, string>;
-  displayDate: string;
+  displayTime: string;
   first: boolean;
 }) {
   const [selected, setSelected] = useState("");
@@ -294,7 +294,14 @@ function MetricRow({
     points[0]!;
   const latestAt = latestByChannel.get(channelKey(point));
   const range = explicitRange || (latestAt ? latestDay(latestAt) : null);
-  const displayRange = explicitRange || (range ? latestDay(displayDate) : null);
+  const displayRange =
+    explicitRange ||
+    (range
+      ? {
+          from: `${displayTime.slice(0, 10)}T00:00`,
+          to: displayTime,
+        }
+      : null);
   const series = useQuery({
     queryKey: [
       "samples",
@@ -320,6 +327,9 @@ function MetricRow({
       ),
     enabled: active && range !== null,
   });
+  const displayItems = explicitRange
+    ? series.data?.items || []
+    : samplesUntilNow(series.data?.items || [], displayTime);
   const thresholds = useQuery({
     queryKey: [
       "thresholds",
@@ -390,25 +400,18 @@ function MetricRow({
         <ErrorState error={series.error} retry={() => void series.refetch()} />
       ) : series.isPending ? (
         <Empty>正在读取监测值…</Empty>
-      ) : !series.data?.items.length ? (
+      ) : !displayItems.length ? (
         <Empty>
-          所选区间暂无监测值，请选择历史时间查询。
+          {explicitRange
+            ? "所选区间暂无监测值，请选择历史时间查询。"
+            : "当前时刻之前暂无监测值。"}
           <small>请核对数据时间范围与测点，缺测不会显示为零。</small>
         </Empty>
       ) : (
         <>
           <div className="chart-box">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={
-                  explicitRange
-                    ? series.data.items
-                    : series.data.items.map((sample) => ({
-                        ...sample,
-                        time: displayDate + sample.time.slice(10),
-                      }))
-                }
-              >
+              <LineChart data={displayItems}>
                 <CartesianGrid stroke="#244057" strokeDasharray="3 3" />
                 <XAxis
                   dataKey="time"
@@ -471,9 +474,9 @@ function MetricRow({
             </ResponsiveContainer>
           </div>
           <div className="panel-foot">
-            {series.data.items.length} 个记录 · 非数值{" "}
-            {series.data.items.filter((p) => p.value === null).length} 个
-            {series.data.truncated && " · 数据超过2000条，请缩小查询范围"}
+            {displayItems.length} 个记录 · 非数值{" "}
+            {displayItems.filter((p) => p.value === null).length} 个
+            {series.data?.truncated && " · 数据超过2000条，请缩小查询范围"}
           </div>
         </>
       )}

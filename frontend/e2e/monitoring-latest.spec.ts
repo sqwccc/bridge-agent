@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { yesterdayInShanghai } from "../src/features/monitoring/displayDate";
+import { nowInShanghai } from "../src/features/monitoring/displayDate";
 
 test("缓慢往返滚动，悬停暂停，移开立即继续且到底不跳转", async ({ page }) => {
   await page.goto("/bridges/10905200071");
@@ -48,7 +48,7 @@ test("默认最近有数据日，指标独立滚动，历史查询可恢复", as
     list.locator(".metric-row").first().locator(".chart-box"),
   ).toBeVisible();
   await expect(list.locator(".monitor-meta").first()).toContainText(
-    `${yesterdayInShanghai()} 00:00`,
+    `${nowInShanghai().slice(0, 10)} 00:00 至 ${nowInShanghai().slice(0, 10)}`,
   );
   expect(samples[0].searchParams.get("from")).toBe("2026-10-22T00:00");
   expect(await list.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(

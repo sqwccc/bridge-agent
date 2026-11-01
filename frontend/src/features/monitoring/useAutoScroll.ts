@@ -43,7 +43,7 @@ export function useAutoScroll(ready: boolean) {
           }
           // Ease near both ends and reverse in place instead of jumping to the top.
           const distance = Math.min(el.scrollTop, bottom - el.scrollTop);
-          const speed = 12 * Math.max(0.35, Math.min(1, distance / 60));
+          const speed = 18 * Math.max(0.35, Math.min(1, distance / 60));
           remainder += (elapsed * speed) / 1000;
           const pixels = Math.floor(remainder);
           el.scrollTop += direction * pixels;
