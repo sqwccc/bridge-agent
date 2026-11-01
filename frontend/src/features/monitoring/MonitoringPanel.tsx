@@ -15,12 +15,29 @@ import { useStructure } from "../bridge/BridgeStructure";
 import { bindingKey, monitorPointsQuery } from "../../api/structure";
 import { api } from "../../api/client";
 import type { MonitorPoint, Sample, Threshold } from "../../api/types";
-import { localTime, time, num } from "../../api/types";
+import { time, num } from "../../api/types";
 import { Empty, ErrorState, Panel } from "../shared/ui";
+
+type Range = { from: string; to: string };
+type Latest = Pick<MonitorPoint, "pointId" | "deviceId" | "metric"> & {
+  latestAt: string;
+};
+const channelKey = (
+  point: Pick<MonitorPoint, "pointId" | "deviceId" | "metric">,
+) => JSON.stringify([point.pointId, point.deviceId, point.metric]);
+function latestDay(timestamp: string): Range {
+  const day = timestamp.slice(0, 10);
+  const next = new Date(`${day}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return {
+    from: `${day}T00:00`,
+    to: `${next.toISOString().slice(0, 10)}T00:00`,
+  };
+}
 
 /** 指标与单位分别分组；仅加载滚动到可见范围的序列，保持缺测断点。 */
 export function MonitoringPanel({ bridgeId }: { bridgeId: string }) {
-  const [range, setRange] = useState(() => {
+  const [range, setRange] = useState<Range | null>(() => {
     const params = new URLSearchParams(window.location.search);
     const from = params.get("from") || "";
     const to = params.get("to") || "";
@@ -34,12 +51,28 @@ export function MonitoringPanel({ bridgeId }: { bridgeId: string }) {
     ) {
       return { from, to };
     }
-    return {
-      from: localTime(new Date(Date.now() - 7200000)),
-      to: localTime(new Date()),
-    };
+    return null;
   });
-  const [draft, setDraft] = useState(range);
+  const [draftOverride, setDraft] = useState<Range | null>(range);
+  const latest = useQuery({
+    queryKey: ["monitor-latest", bridgeId],
+    queryFn: ({ signal }) =>
+      api<Latest[]>(
+        `bridges/${encodeURIComponent(bridgeId)}/monitoring/latest`,
+        {},
+        signal,
+      ),
+    staleTime: 30000,
+  });
+  const latestByChannel = new Map(
+    (latest.data || []).map((p) => [channelKey(p), p.latestAt]),
+  );
+  const newest = (latest.data || [])
+    .map((p) => p.latestAt)
+    .sort()
+    .at(-1);
+  const draft =
+    draftOverride || (newest ? latestDay(newest) : { from: "", to: "" });
   const points = useQuery(monitorPointsQuery(bridgeId));
   const { selection, select, parts, selectedPart, config } = useStructure();
   const filtered = !!selection && selection !== "all";
@@ -112,33 +145,71 @@ export function MonitoringPanel({ bridgeId }: { bridgeId: string }) {
               onChange={(e) => setDraft({ ...draft, to: e.target.value })}
             />
           </label>
-          <button onClick={() => setRange(draft)}>查询</button>
+          <button
+            disabled={!draft.from || !draft.to}
+            onClick={() => setRange(draft)}
+          >
+            查询
+          </button>
+          <button
+            onClick={() => {
+              setRange(null);
+              setDraft(null);
+              void latest.refetch();
+            }}
+          >
+            最近有数据日
+          </button>
         </div>
         <p className="muted-caption">北京时间 · 最多31天 · 未知单位不合并</p>
       </details>
-      {points.error ? (
-        <ErrorState error={points.error} retry={() => void points.refetch()} />
-      ) : points.isPending ? (
-        <Empty>正在读取测点…</Empty>
-      ) : !groups.size ? (
-        <Empty>
-          {filtered ? "当前选择没有有效绑定测点。" : "暂无可关联的监测设备。"}
-        </Empty>
-      ) : (
-        [...groups].map(([key, list], i) => (
-          <MetricRow
-            key={key}
-            bridgeId={bridgeId}
-            points={list}
-            range={range}
-            first={i === 0}
+      <p className="muted-caption">
+        {range
+          ? "历史查询区间"
+          : "默认显示各测点最近有记录的自然日（北京时间）"}{" "}
+        · 滚动查看其他指标
+      </p>
+      <div
+        className="monitor-metric-list"
+        tabIndex={0}
+        role="region"
+        aria-label="监测指标滚动列表"
+      >
+        {!range && latest.error ? (
+          <ErrorState
+            error={latest.error}
+            retry={() => void latest.refetch()}
           />
-        ))
-      )}
-      <div className="video-placeholder">
-        <span>▻</span>
-        <div>
-          视频监控<small>视频服务待接入</small>
+        ) : !range && latest.isPending ? (
+          <Empty>正在查找最近有数据的日期…</Empty>
+        ) : points.error ? (
+          <ErrorState
+            error={points.error}
+            retry={() => void points.refetch()}
+          />
+        ) : points.isPending ? (
+          <Empty>正在读取测点…</Empty>
+        ) : !groups.size ? (
+          <Empty>
+            {filtered ? "当前选择没有有效绑定测点。" : "暂无可关联的监测设备。"}
+          </Empty>
+        ) : (
+          [...groups].map(([key, list], i) => (
+            <MetricRow
+              key={key}
+              bridgeId={bridgeId}
+              points={list}
+              range={range}
+              latestByChannel={latestByChannel}
+              first={i === 0}
+            />
+          ))
+        )}
+        <div className="video-placeholder">
+          <span>▻</span>
+          <div>
+            视频监控<small>视频服务待接入</small>
+          </div>
         </div>
       </div>
     </Panel>
@@ -148,12 +219,14 @@ export function MonitoringPanel({ bridgeId }: { bridgeId: string }) {
 function MetricRow({
   bridgeId,
   points,
-  range,
+  range: explicitRange,
+  latestByChannel,
   first,
 }: {
   bridgeId: string;
   points: MonitorPoint[];
-  range: { from: string; to: string };
+  range: Range | null;
+  latestByChannel: Map<string, string>;
   first: boolean;
 }) {
   const [selected, setSelected] = useState("");
@@ -182,7 +255,12 @@ function MetricRow({
     (devicePrefix
       ? points.find((p) => p.deviceId.startsWith(devicePrefix))
       : undefined) ||
+    (!explicitRange
+      ? points.find((p) => latestByChannel.has(channelKey(p)))
+      : undefined) ||
     points[0]!;
+  const latestAt = latestByChannel.get(channelKey(point));
+  const range = explicitRange || (latestAt ? latestDay(latestAt) : null);
   const series = useQuery({
     queryKey: [
       "samples",
@@ -206,7 +284,7 @@ function MetricRow({
         },
         signal,
       ),
-    enabled: active,
+    enabled: active && range !== null,
   });
   const thresholds = useQuery({
     queryKey: [
@@ -255,7 +333,9 @@ function MetricRow({
           {point.unitBasis === "FAQ_2026" ? "（对接字典）" : ""}
         </span>
         <span>
-          {range.from.replace("T", " ")} 至 {range.to.replace("T", " ")}
+          {range
+            ? `${range.from.replace("T", " ")} 至 ${range.to.replace("T", " ")}`
+            : "暂无历史记录"}
         </span>
       </div>
       <details className="monitor-device-details">
@@ -268,7 +348,9 @@ function MetricRow({
           设备同步：{time(point.sourceUpdatedAt)}
         </div>
       </details>
-      {!active ? (
+      {!range ? (
+        <Empty>本测点暂无历史监测记录，缺测不会显示为零。</Empty>
+      ) : !active ? (
         <Empty>滚动到此处读取监测数据…</Empty>
       ) : series.error ? (
         <ErrorState error={series.error} retry={() => void series.refetch()} />

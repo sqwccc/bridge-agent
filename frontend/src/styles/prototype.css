@@ -1119,7 +1119,27 @@ body {
 
 .prototype-bridge-page .monitor-panel .panel-body {
   gap: 12px;
-  display: block;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.monitor-metric-list {
+  flex: 1;
+  min-height: 180px;
+  max-height: 540px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.monitor-metric-list:focus-visible {
+  outline: 1px solid #39ded1;
+}
+
+.monitor-panel .panel-body > .muted-caption {
+  margin: 0;
 }
 
 .monitor-history {

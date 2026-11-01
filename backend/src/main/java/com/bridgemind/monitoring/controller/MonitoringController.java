@@ -24,6 +24,11 @@ public class MonitoringController {
         return ApiResponse.ok(service.points(id));
     }
 
+    @GetMapping("/latest")
+    public ApiResponse<?> latest(@PathVariable String id) {
+        return ApiResponse.ok(service.latest(id));
+    }
+
     @GetMapping("/thresholds")
     public ApiResponse<?> thresholds(@PathVariable String id, @RequestParam(required = false) String point,
                                      @RequestParam(required = false) String device, @RequestParam(required = false) String metric) {

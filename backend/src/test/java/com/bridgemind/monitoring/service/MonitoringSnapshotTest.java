@@ -14,6 +14,18 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class MonitoringSnapshotTest {
+    @Test void latestDatesUseOnlyValidatedCityAndChannelsAndSkipEmptyScope() {
+        var service=service();
+        var latest=List.of(new LatestSampleResponse("P","D","QL0301",LocalDateTime.of(2026,10,22,23,59)));
+        when(mapper.latestForPoints(anyString(),anyList())).thenReturn(latest);
+        assertEquals(latest,service.latest("A"));
+        verify(mapper).latestForPoints("321000",service.points("A"));
+        when(bridges.require("hidden")).thenThrow(new IllegalArgumentException("not visible"));
+        assertThrows(IllegalArgumentException.class,()->service.latest("hidden"));
+        ticks.set(Duration.ofSeconds(31).toNanos());when(mapper.points("A")).thenReturn(List.of());
+        assertTrue(service.latest("A").isEmpty());
+        verify(mapper,times(1)).latestForPoints(anyString(),anyList());
+    }
     final MonitoringMapper mapper = mock(MonitoringMapper.class);
     final BridgeService bridges = mock(BridgeService.class);
     final AtomicLong ticks = new AtomicLong();

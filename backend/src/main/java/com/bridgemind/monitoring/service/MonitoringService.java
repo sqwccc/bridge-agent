@@ -49,6 +49,12 @@ public class MonitoringService {
         return points(scope(id));
     }
 
+    public List<LatestSampleResponse> latest(String id) {
+        var scope=scope(id);
+        var available=points(scope);
+        return available.isEmpty()?List.of():mapper.latestForPoints(scope.cityCode(),available);
+    }
+
     public List<ThresholdResponse> thresholds(String id, String point, String device, String metric) {
         var scope = scope(id);
         if (point != null && !point.isBlank() && (device == null || device.isBlank()))
