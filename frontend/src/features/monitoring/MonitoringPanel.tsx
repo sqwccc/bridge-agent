@@ -17,6 +17,7 @@ import { api } from "../../api/client";
 import type { MonitorPoint, Sample, Threshold } from "../../api/types";
 import { time, num } from "../../api/types";
 import { Empty, ErrorState, Panel } from "../shared/ui";
+import { useAutoScroll } from "./useAutoScroll";
 
 type Range = { from: string; to: string };
 type Latest = Pick<MonitorPoint, "pointId" | "deviceId" | "metric"> & {
@@ -74,6 +75,9 @@ export function MonitoringPanel({ bridgeId }: { bridgeId: string }) {
   const draft =
     draftOverride || (newest ? latestDay(newest) : { from: "", to: "" });
   const points = useQuery(monitorPointsQuery(bridgeId));
+  const scrolling = useAutoScroll(
+    points.isSuccess && (range !== null || latest.isSuccess),
+  );
   const { selection, select, parts, selectedPart, config } = useStructure();
   const filtered = !!selection && selection !== "all";
   const chosen = filtered
@@ -163,14 +167,41 @@ export function MonitoringPanel({ bridgeId }: { bridgeId: string }) {
         </div>
         <p className="muted-caption">北京时间 · 最多31天 · 未知单位不合并</p>
       </details>
-      <p className="muted-caption">
-        {range
-          ? "历史查询区间"
-          : "默认显示各测点最近有记录的自然日（北京时间）"}{" "}
-        · 滚动查看其他指标
-      </p>
+      <div className="monitor-scroll-toolbar">
+        <p className="muted-caption">
+          {range ? "历史查询区间" : "各测点最近有记录日（北京时间）"} ·{" "}
+          {scrolling.enabled ? "自动滚动，悬停或操作时暂停" : "手动滚动"}
+        </p>
+        <button
+          aria-pressed={scrolling.enabled}
+          onClick={() => scrolling.setEnabled((v) => !v)}
+        >
+          {scrolling.enabled ? "暂停滚动" : "开启自动滚动"}
+        </button>
+      </div>
       <div
+        ref={scrolling.element}
         className="monitor-metric-list"
+        onPointerEnter={() => {
+          scrolling.interaction.current.hover = true;
+        }}
+        onPointerLeave={() => {
+          scrolling.interaction.current.hover = false;
+        }}
+        onFocusCapture={() => {
+          scrolling.interaction.current.focus = true;
+        }}
+        onBlurCapture={(e) => {
+          scrolling.interaction.current.focus = e.currentTarget.contains(
+            e.relatedTarget,
+          );
+        }}
+        onWheel={() => {
+          scrolling.interaction.current.resumeAt = performance.now() + 3000;
+        }}
+        onTouchStart={() => {
+          scrolling.interaction.current.resumeAt = performance.now() + 3000;
+        }}
         tabIndex={0}
         role="region"
         aria-label="监测指标滚动列表"

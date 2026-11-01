@@ -1,5 +1,37 @@
 import { test, expect } from "@playwright/test";
 
+test("指标自动滚动可悬停暂停和手动开关，到底循环", async ({ page }) => {
+  await page.goto("/bridges/10905200071");
+  const list = page.getByRole("region", { name: "监测指标滚动列表" });
+  await expect(list.locator(".chart-box").first()).toBeVisible();
+  await page.mouse.move(0, 0);
+  await expect
+    .poll(() => list.evaluate((e) => e.scrollTop))
+    .toBeGreaterThan(20);
+  await list.hover();
+  const paused = await list.evaluate((e) => e.scrollTop);
+  await page.waitForTimeout(400);
+  expect(await list.evaluate((e) => e.scrollTop)).toBe(paused);
+  await page.mouse.move(0, 0);
+  await expect
+    .poll(() => list.evaluate((e) => e.scrollTop))
+    .toBeGreaterThan(paused + 10);
+  await list.focus();
+  const focused = await list.evaluate((e) => e.scrollTop);
+  await page.waitForTimeout(400);
+  expect(await list.evaluate((e) => e.scrollTop)).toBe(focused);
+  await page.getByRole("button", { name: "暂停滚动", exact: true }).click();
+  const stopped = await list.evaluate((e) => e.scrollTop);
+  await page.waitForTimeout(400);
+  expect(await list.evaluate((e) => e.scrollTop)).toBe(stopped);
+  await page.getByRole("button", { name: "开启自动滚动", exact: true }).click();
+  await list.evaluate((e) => (e.scrollTop = e.scrollHeight));
+  await page.mouse.move(0, 0);
+  await expect
+    .poll(() => list.evaluate((e) => e.scrollTop), { timeout: 8000 })
+    .toBeLessThan(50);
+});
+
 test("默认最近有数据日，指标独立滚动，历史查询可恢复", async ({ page }) => {
   const samples: URL[] = [];
   page.on("request", (r) => {
