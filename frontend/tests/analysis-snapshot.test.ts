@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { runInContext, createContext } from "node:vm";
+import health from "../src/features/bridge/wanfu-health.json";
 
 describe("v3.2 快照和原算法基准", () => {
   it("保留原数据、内核、布局和图表的字节校验", () => {
@@ -38,6 +39,14 @@ describe("v3.2 快照和原算法基准", () => {
     expect(score.grade).toBe("B");
     expect(score.channels).toHaveLength(181);
     expect(score.comps).toHaveLength(32);
+    // Detail-page values must remain aligned with the actual A1 default calculation.
+    const detailScore = context.window.BA.assess(health.parameters);
+    for (const key of ["Dr", "BCI", "BSI", "finalScore"] as const) {
+      expect(health[key]).toBe(Number(detailScore[key].toFixed(1)));
+    }
+    expect(health.sub).toBe(Number(detailScore.sys.sub.score.toFixed(1)));
+    expect(health.grade).toBe(detailScore.grade);
+    expect(health.minFrom).toBe(detailScore.minFrom);
     expect(
       runInContext("window.BA.cableForce(18.5,50,3.8)", context),
     ).toBeCloseTo(2671.4, 8);

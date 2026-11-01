@@ -1,0 +1,14 @@
+{
+  "bridgeId": "10905200071",
+  "source": "v3.2 · A1 默认参数",
+  "monitoringPeriod": "2026/10/21 23:27:04 — 2026/10/22 23:59:48",
+  "parameters": { "mgt": "I", "frRatio": 1, "ifRatio": 0.95 },
+  "Dr": 89.2,
+  "BCI": 88.1,
+  "BSI": 89.6,
+  "sub": 91.5,
+  "finalScore": 88.1,
+  "grade": "B",
+  "gradeName": "良好",
+  "minFrom": "BCI*"
+}

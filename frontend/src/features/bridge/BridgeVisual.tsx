@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Link } from "react-router";
+import wanfuHealth from "./wanfu-health.json";
 import type { Bridge } from "../../api/types";
 import { Panel } from "../shared/ui";
 import { StructureEditor } from "./StructureEditor";
@@ -134,7 +136,7 @@ export function BridgeVisual({ bridge }: { bridge: Bridge }) {
         </div>
       )}
       <p className="structure-selection" role="status">
-        {label} · 高亮仅表示选择，健康度待接入
+        {label} · 高亮仅表示选择，{wanfu ? "评分见健康状态" : "健康度待接入"}
       </p>
     </Panel>
   );
@@ -148,6 +150,10 @@ export function BridgeHealth({
   onArchive: () => void;
 }) {
   const { selection, select, parts } = useStructure();
+  const health = isWanfu(b) ? wanfuHealth : null;
+  const zoneScores = health
+    ? { 上部结构: health.BSI, 下部结构: health.sub, 桥面系: health.BCI }
+    : null;
   return (
     <Panel title="健康状态" note="来源可追溯" className="bridge-health-column">
       <div className="health-tree">
@@ -158,10 +164,18 @@ export function BridgeHealth({
           onClick={() => select("all")}
         >
           <strong>
-            整体 <em>—</em>
+            {health ? "总体 Dr" : "整体"}{" "}
+            <em>{health ? health.Dr.toFixed(1) : "—"}</em>
           </strong>
-          <span>综合评分尚未接入</span>
+          <span>{health ? "A1 总体技术状况评分" : "综合评分尚未接入"}</span>
         </button>
+        {health && (
+          <p className="muted-caption" data-testid="wanfu-final-score">
+            最终得分 {health.finalScore.toFixed(1)} · {health.grade} ·{" "}
+            {health.gradeName}
+            <br />取 min(Dr, BCI*, BSI*)，当前取值 {health.minFrom}
+          </p>
+        )}
         <div className="health-children">
           <small className="health-level">组成部位 · 点击联动示意图</small>
           {ZONES.map((zone) => (
@@ -175,9 +189,13 @@ export function BridgeHealth({
               >
                 <strong>
                   {zone}
-                  <em>—</em>
+                  <em>{zoneScores ? zoneScores[zone].toFixed(1) : "—"}</em>
                 </strong>
-                <span>暂无评价 · 选择部位</span>
+                <span>
+                  {health
+                    ? `${zone === "桥面系" ? "BCI*" : zone === "上部结构" ? "BSI*" : "A1 分项评分"} · 选择部位`
+                    : "暂无评价 · 选择部位"}
+                </span>
               </button>
               {selection && selection !== "all" && selection.zone === zone && (
                 <div className="health-parts">
@@ -204,6 +222,18 @@ export function BridgeHealth({
         </div>
       </div>
       <div className="health-legend">高亮表示当前选择；“—”表示暂无健康评价</div>
+      {health && (
+        <div className="health-source-section">
+          <small className="health-level">评分来源：{health.source}</small>
+          <p className="muted-caption">
+            监测快照（北京时间）：{health.monitoringPeriod}。
+            自振频率与冲击系数沿用分析页默认假定比值；页面内调参不改变此快照评分。
+          </p>
+          <Link to={`/bridges/${health.bridgeId}/analysis`}>
+            查看评分依据 →
+          </Link>
+        </div>
+      )}
       <div className="health-source-section">
         <small className="health-level">来源技术状况评价</small>
         <div className="source-grades">
