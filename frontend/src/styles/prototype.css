@@ -1138,24 +1138,6 @@ body {
   outline: 1px solid #39ded1;
 }
 
-.monitor-scroll-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.monitor-scroll-toolbar .muted-caption {
-  margin: 0;
-  flex: 1;
-}
-
-.monitor-scroll-toolbar button {
-  flex-shrink: 0;
-  font-size: 12px;
-}
-
 .monitor-panel .panel-body > .muted-caption {
   margin: 0;
 }

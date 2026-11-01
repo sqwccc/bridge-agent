@@ -167,18 +167,6 @@ export function MonitoringPanel({ bridgeId }: { bridgeId: string }) {
         </div>
         <p className="muted-caption">北京时间 · 最多31天 · 未知单位不合并</p>
       </details>
-      <div className="monitor-scroll-toolbar">
-        <p className="muted-caption">
-          {range ? "历史查询区间" : "各测点最近有记录日（北京时间）"} ·{" "}
-          {scrolling.enabled ? "自动滚动，悬停或操作时暂停" : "手动滚动"}
-        </p>
-        <button
-          aria-pressed={scrolling.enabled}
-          onClick={() => scrolling.setEnabled((v) => !v)}
-        >
-          {scrolling.enabled ? "暂停滚动" : "开启自动滚动"}
-        </button>
-      </div>
       <div
         ref={scrolling.element}
         className="monitor-metric-list"

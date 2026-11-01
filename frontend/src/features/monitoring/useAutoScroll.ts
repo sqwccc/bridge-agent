@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 export function useAutoScroll(ready: boolean) {
   const element = useRef<HTMLDivElement>(null);
   const interaction = useRef({ hover: false, focus: false, resumeAt: 0 });
-  const [enabled, setEnabled] = useState(
+  const [enabled] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
   useEffect(() => {
@@ -50,5 +50,5 @@ export function useAutoScroll(ready: boolean) {
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [enabled, ready]);
-  return { element, interaction, enabled, setEnabled };
+  return { element, interaction };
 }
