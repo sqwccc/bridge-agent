@@ -84,3 +84,12 @@ python scripts/verify-agent-enhancement.py --model
 复验：`python scripts/verify-agent-focus.py`（规则）或追加 `--model`（强制断言Dify实际回答），覆盖总体/单桥各两个问题，并核对任务分组合计。结果保存至 `runtime/agent-focus-evidence.json`。浏览器 `pnpm exec playwright test e2e/agent-focus.spec.ts` 回放真实联调证据，检查两个快捷入口和表格。源库边界测试为 `AgentSourceIntegrationTest#focusGroupsAndCoverageRespectScopeAndDates`，需显式设置 `-Dbridgemind.sourceIntegration=true`，核验空范围、未来日期、当前配置保留及分组数量。所有来源访问只读。
 
 本次重点问答验证：后端56例普通测试通过，另1例只读源库边界测试通过；前端5例单元测试、lint和build通过。总体/单桥各2个真实Dify模型场景共4例全部通过（无规则降级），规则模式同样4例通过。浏览器6例原问答回归加2例重点问答证据回放通过；回放用于页面检查，不冒充浏览器实时模型调用。真实数据底数为131座桥、23345条巡检、722条病害、484条维修、3000条读数；养护互斥组为81/183/458条，合计722。查询源库多次聚合，响应耗时受源库和模型负载影响。超过6项的来源列表折叠展示，可展开追溯。单桥重点问答移除原始评价编码，仅向模型提供明确的BCI/BSI等级名称，避免将编码7误写成“技术等级7”。
+
+
+## Dify 分支隔离
+
+Git 分支本身不隔离外部 Dify 应用。本分支现在使用同一 Dify 服务下两个独立应用，名称带 `[codex/agent-qa-enhancement]` 后缀，分类和回答分别有独立 API Key。原应用未删除，ID、API Key、模型等设置保留，原提示词已从 `dify-before-qa-enhancement-*.json` 备份恢复。没有新建 Docker 服务或复制数据卷；工作区模型供应商配置仍共享。
+
+`python scripts/isolate-dify-branch.py` 建立分支应用和本地映射；默认不改原应用；仅显式追加 `--restore-original-prompts` 时执行一次备份恢复，重复执行不再次覆盖原应用。`python scripts/sync-agent-prompts.py --apply-local` 现在只更新当前分支映射中的应用，无映射时拒绝执行。带密钥的映射保存在已忽略的 `runtime/dify-branch-*.json`，不会写入 Git，原 `runtime/dify-account.json` 和 `.env.local` 不改动。
+
+通过 `scripts/start-backend.ps1` 启动时，`LocalEnvironment.ps1` 按当前 Git 分支选择独立 Key。切换分支后需要重启后端；没有映射的旧分支使用原 `.env.local`。旧 `configure-dify.py configure`、`upgrade-dify-agent.py` 属于原应用初始化/迁移工具，本分支日常更新只使用上述分支同步命令，避免操作原应用。此隔离目前针对本机 PowerShell 启动；Docker/部署环境须显式提供对应分支应用的 Key，不能假设 Git 分支自动传递环境变量。

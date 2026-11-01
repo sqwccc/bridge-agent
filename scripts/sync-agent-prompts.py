@@ -1,7 +1,7 @@
 """Update only pre_prompt in checked-in Dify DSLs; never touch model credentials/config.
 
 The replacement uses a JSON-quoted YAML scalar, preserving every other byte in the DSL.
-By default no service calls; --apply-local updates only existing app prompts.
+By default no service calls; --apply-local updates only branch-owned app prompts.
 """
 import json
 import re
@@ -23,7 +23,7 @@ def sync(path, prompt):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--apply-local", action="store_true", help="Update existing local Dify app prompts only")
+    parser.add_argument("--apply-local", action="store_true", help="Update branch-owned local Dify app prompts only")
     args = parser.parse_args()
     for name, role in [("dify-classifier-app.yml", "classifier"), ("dify-bridge-app.yml", "answer")]:
         sync(ROOT / "docs" / name, (ROOT / "docs" / f"dify-{role}-prompt.txt").read_text(encoding="utf-8-sig"))
@@ -33,15 +33,24 @@ if __name__ == "__main__":
         configurer = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(configurer)
         try:
-            state = configurer.login()
+            configurer.login()
+            branch_spec = importlib.util.spec_from_file_location("dify_branch", ROOT / "scripts/isolate-dify-branch.py")
+            branch_module = importlib.util.module_from_spec(branch_spec)
+            branch_spec.loader.exec_module(branch_module)
+            mapping = branch_module.state_path()
+            if not mapping.exists():
+                raise ValueError("Create branch-owned apps with isolate-dify-branch.py first")
+            state = json.loads(mapping.read_text(encoding="utf-8"))
+            if state["branch"] != branch_module.branch():
+                raise ValueError("Dify branch mapping mismatch")
             for role, id_key in [("classifier", "classifier_app_id"), ("answer", "app_id")]:
                 app_id = state[id_key]
                 config = configurer.call("/apps/" + app_id)["model_config"]
-                backup = ROOT / "runtime" / f"dify-before-qa-enhancement-{role}.json"
+                backup = ROOT / "runtime" / f"{mapping.stem}-before-sync-{role}.json"
                 if not backup.exists():
                     backup.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
                 config["pre_prompt"] = (ROOT / "docs" / f"dify-{role}-prompt.txt").read_text(encoding="utf-8-sig")
                 configurer.call("/apps/" + app_id + "/model-config", config)
-            print("Updated existing local Dify prompts; models, credentials and other settings preserved.")
+            print("Updated branch-owned local Dify prompts; models, credentials and other settings preserved.")
         except Exception as error:
-            raise SystemExit("Local Dify update failed: " + type(error).__name__ + ". Check service availability; no credentials logged.") from None
+            raise SystemExit("Local Dify update failed: " + type(error).__name__ + ". Run isolate-dify-branch.py first and check service availability; no credentials logged.") from None
