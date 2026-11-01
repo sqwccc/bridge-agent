@@ -1,0 +1,3 @@
+# Preserve imported v3.2 bytes so source hashes are stable across checkouts.
+frontend/public/wanfu-analysis-v3.2/js/** -text
+frontend/public/wanfu-analysis-v3.2/app.css -text

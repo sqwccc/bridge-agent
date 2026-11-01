@@ -7,6 +7,7 @@ import { ScreenPage } from "../pages/ScreenPage";
 import { BridgePage } from "../pages/BridgePage";
 import { WorkPage } from "../pages/WorkPage";
 import { QualityPage } from "../pages/QualityPage";
+import { AnalysisPage } from "../pages/AnalysisPage";
 import { ErrorState } from "../features/shared/ui";
 import { useAccessConfig } from "./access";
 
@@ -69,6 +70,10 @@ export function App() {
       <Route element={preview ? <Outlet /> : <AuthGate />}>
         <Route path="/screen" element={<ScreenPage />} />
         <Route path="/bridges/:bridgeId" element={<BridgePage />} />
+        <Route
+          path="/bridges/10905200071/analysis"
+          element={<AnalysisPage />}
+        />
         <Route path="/bridges/:bridgeId/records" element={<WorkPage />} />
         <Route path="/data-quality" element={<QualityPage />} />
       </Route>

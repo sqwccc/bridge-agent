@@ -3,3 +3,5 @@ dist/
 test-results/
 playwright-report/
 pnpm-lock.yaml
+
+public/wanfu-analysis-v3.2/

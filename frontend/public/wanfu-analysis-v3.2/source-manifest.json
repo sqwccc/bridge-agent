@@ -1,0 +1,16 @@
+{
+  "version": "桥梁智能体_平台接入版_v3.2",
+  "sourceHashes": {
+    "app.css": "cc3633cb2909701ad23047f43fd0515e937697294e0bf6dfcf7918ca8ea38c8a",
+    "js/seed-data.js": "448b920a7302dd6bcaf4915b13a544a6f83ef74e219e770d98d48ec26f9f262d",
+    "js/live-vib.js": "17e91ceaff646dab95b4ef6b19fb4572a727d752b270ef27b479bd2bf6beca07",
+    "js/bridge/core.js": "22f9b0296ceccddc88b68c07fec9864b1806495fce2831fc7bd7c6e605b08f07",
+    "js/bridge/layout.js": "fbc967fbdd27f56cbb603e28d4f5c0a38af88985b626025ca5cea01a27a7d34a",
+    "js/bridge/charts.js": "b49e2a948f6450902ac425f13071d561f126af63db5c49fe74cc83ff01743527",
+    "js/bridge/ui.js": "df984c1dc9b783adbb2da6f0633833f9b04aecbb6472f55d69db1dda94959044",
+    "js/bridge/algo.js": "e3daaf72c3efaeaa304159e7f1ee1ea144907128ced061cb87062abea6c0d82e"
+  },
+  "changes": {
+    "js/bridge/algo.js": "显示文案改为数据快照/本页分析；增加空通道与无索力构件提示；修正无振动快照分支 BA.D() 为 BA.D。其余算法保留。"
+  }
+}

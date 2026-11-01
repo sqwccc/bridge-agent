@@ -77,6 +77,14 @@ export function BridgePage() {
                   onArchive={() => setProfileTab("overview")}
                 />
                 <BridgeVisual key={id} bridge={b} />
+                {id === "10905200071" && (
+                  <Link
+                    className="record-entry"
+                    to="/bridges/10905200071/analysis"
+                  >
+                    数据分析 →
+                  </Link>
+                )}
               </div>
               <BridgeHealth
                 bridge={b}

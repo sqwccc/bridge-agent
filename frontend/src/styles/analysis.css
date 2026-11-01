@@ -1,0 +1,42 @@
+.analysis-page {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: #061627;
+  color: #d6e9fa;
+}
+.analysis-header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 16px 24px;
+  border-bottom: 1px solid #21435c;
+}
+.analysis-header h1 {
+  flex: 1;
+  margin: 0;
+  font-size: 22px;
+}
+.analysis-header a {
+  color: #38d9f5;
+}
+.analysis-page > p {
+  padding: 8px 24px;
+  margin: 0;
+}
+.analysis-page > iframe {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  border: 0;
+}
+@media (max-width: 800px) {
+  .analysis-header {
+    padding: 12px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .analysis-header h1 {
+    font-size: 18px;
+  }
+}
