@@ -11,37 +11,42 @@ export function useAutoScroll(ready: boolean) {
     let frame = 0;
     let previous = performance.now();
     let waitUntil = previous + 1800;
-    let bottomSince = 0;
+    let direction = 1;
+    let wasPaused = false;
     let remainder = 0;
     const tick = (now: number) => {
       const elapsed = Math.min(now - previous, 100);
       previous = now;
       const el = element.current;
       const paused = interaction.current;
-      if (
+      const blocked =
         !el ||
         document.hidden ||
         paused.hover ||
         paused.focus ||
-        now < paused.resumeAt ||
-        now < waitUntil
-      ) {
-        bottomSince = 0;
+        now < paused.resumeAt;
+      if (blocked) {
+        wasPaused = true;
       } else {
+        if (wasPaused) {
+          waitUntil = 0;
+          wasPaused = false;
+        }
         const bottom = el.scrollHeight - el.clientHeight;
-        if (bottom > 1 && el.scrollTop >= bottom - 1) {
-          bottomSince ||= now;
-          if (now - bottomSince >= 2000) {
-            el.scrollTop = 0;
-            bottomSince = 0;
+        if (bottom > 1 && now >= waitUntil) {
+          if (
+            (direction > 0 && el.scrollTop >= bottom - 1) ||
+            (direction < 0 && el.scrollTop <= 1)
+          ) {
+            direction *= -1;
             remainder = 0;
-            waitUntil = now + 1800;
           }
-        } else if (bottom > 1) {
-          bottomSince = 0;
-          remainder += (elapsed * 24) / 1000;
+          // Ease near both ends and reverse in place instead of jumping to the top.
+          const distance = Math.min(el.scrollTop, bottom - el.scrollTop);
+          const speed = 12 * Math.max(0.35, Math.min(1, distance / 60));
+          remainder += (elapsed * speed) / 1000;
           const pixels = Math.floor(remainder);
-          el.scrollTop += pixels;
+          el.scrollTop += direction * pixels;
           remainder -= pixels;
         }
       }

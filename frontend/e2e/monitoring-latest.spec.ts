@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
+import { yesterdayInShanghai } from "../src/features/monitoring/displayDate";
 
-test("指标自动滚动可悬停和聚焦暂停，到底循环", async ({ page }) => {
+test("缓慢往返滚动，悬停暂停，移开立即继续且到底不跳转", async ({ page }) => {
   await page.goto("/bridges/10905200071");
   const list = page.getByRole("region", { name: "监测指标滚动列表" });
   await expect(list.locator(".chart-box").first()).toBeVisible();
@@ -12,10 +13,11 @@ test("指标自动滚动可悬停和聚焦暂停，到底循环", async ({ page 
   const paused = await list.evaluate((e) => e.scrollTop);
   await page.waitForTimeout(400);
   expect(await list.evaluate((e) => e.scrollTop)).toBe(paused);
+  await list.dispatchEvent("wheel", { deltaY: 0 });
   await page.mouse.move(0, 0);
   await expect
-    .poll(() => list.evaluate((e) => e.scrollTop))
-    .toBeGreaterThan(paused + 10);
+    .poll(() => list.evaluate((e) => e.scrollTop), { timeout: 1200 })
+    .toBeGreaterThan(paused);
   await list.focus();
   const focused = await list.evaluate((e) => e.scrollTop);
   await page.waitForTimeout(400);
@@ -25,10 +27,12 @@ test("指标自动滚动可悬停和聚焦暂停，到底循环", async ({ page 
   ).toHaveCount(0);
   await list.evaluate((e) => e.blur());
   await list.evaluate((e) => (e.scrollTop = e.scrollHeight));
+  const bottom = await list.evaluate((e) => e.scrollTop);
   await page.mouse.move(0, 0);
   await expect
     .poll(() => list.evaluate((e) => e.scrollTop), { timeout: 8000 })
-    .toBeLessThan(50);
+    .toBeLessThan(bottom - 2);
+  expect(await list.evaluate((e) => e.scrollTop)).toBeGreaterThan(bottom - 60);
 });
 
 test("默认最近有数据日，指标独立滚动，历史查询可恢复", async ({ page }) => {
@@ -44,7 +48,7 @@ test("默认最近有数据日，指标独立滚动，历史查询可恢复", as
     list.locator(".metric-row").first().locator(".chart-box"),
   ).toBeVisible();
   await expect(list.locator(".monitor-meta").first()).toContainText(
-    "2026-10-22 00:00",
+    `${yesterdayInShanghai()} 00:00`,
   );
   expect(samples[0].searchParams.get("from")).toBe("2026-10-22T00:00");
   expect(await list.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(

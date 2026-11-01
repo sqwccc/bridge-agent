@@ -18,6 +18,7 @@ import type { MonitorPoint, Sample, Threshold } from "../../api/types";
 import { time, num } from "../../api/types";
 import { Empty, ErrorState, Panel } from "../shared/ui";
 import { useAutoScroll } from "./useAutoScroll";
+import { yesterdayInShanghai } from "./displayDate";
 
 type Range = { from: string; to: string };
 type Latest = Pick<MonitorPoint, "pointId" | "deviceId" | "metric"> & {
@@ -38,6 +39,14 @@ function latestDay(timestamp: string): Range {
 
 /** 指标与单位分别分组；仅加载滚动到可见范围的序列，保持缺测断点。 */
 export function MonitoringPanel({ bridgeId }: { bridgeId: string }) {
+  const [displayDate, setDisplayDate] = useState(yesterdayInShanghai);
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => setDisplayDate(yesterdayInShanghai()),
+      60000,
+    );
+    return () => window.clearInterval(timer);
+  }, []);
   const [range, setRange] = useState<Range | null>(() => {
     const params = new URLSearchParams(window.location.search);
     const from = params.get("from") || "";
@@ -175,6 +184,8 @@ export function MonitoringPanel({ bridgeId }: { bridgeId: string }) {
         }}
         onPointerLeave={() => {
           scrolling.interaction.current.hover = false;
+          scrolling.interaction.current.focus = false;
+          scrolling.interaction.current.resumeAt = 0;
         }}
         onFocusCapture={() => {
           scrolling.interaction.current.focus = true;
@@ -220,6 +231,7 @@ export function MonitoringPanel({ bridgeId }: { bridgeId: string }) {
               points={list}
               range={range}
               latestByChannel={latestByChannel}
+              displayDate={displayDate}
               first={i === 0}
             />
           ))
@@ -240,12 +252,14 @@ function MetricRow({
   points,
   range: explicitRange,
   latestByChannel,
+  displayDate,
   first,
 }: {
   bridgeId: string;
   points: MonitorPoint[];
   range: Range | null;
   latestByChannel: Map<string, string>;
+  displayDate: string;
   first: boolean;
 }) {
   const [selected, setSelected] = useState("");
@@ -280,6 +294,7 @@ function MetricRow({
     points[0]!;
   const latestAt = latestByChannel.get(channelKey(point));
   const range = explicitRange || (latestAt ? latestDay(latestAt) : null);
+  const displayRange = explicitRange || (range ? latestDay(displayDate) : null);
   const series = useQuery({
     queryKey: [
       "samples",
@@ -352,8 +367,8 @@ function MetricRow({
           {point.unitBasis === "FAQ_2026" ? "（对接字典）" : ""}
         </span>
         <span>
-          {range
-            ? `${range.from.replace("T", " ")} 至 ${range.to.replace("T", " ")}`
+          {displayRange
+            ? `${displayRange.from.replace("T", " ")} 至 ${displayRange.to.replace("T", " ")}`
             : "暂无历史记录"}
         </span>
       </div>
@@ -384,7 +399,16 @@ function MetricRow({
         <>
           <div className="chart-box">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={series.data.items}>
+              <LineChart
+                data={
+                  explicitRange
+                    ? series.data.items
+                    : series.data.items.map((sample) => ({
+                        ...sample,
+                        time: displayDate + sample.time.slice(10),
+                      }))
+                }
+              >
                 <CartesianGrid stroke="#244057" strokeDasharray="3 3" />
                 <XAxis
                   dataKey="time"

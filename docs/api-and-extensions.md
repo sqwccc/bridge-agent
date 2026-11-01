@@ -62,7 +62,7 @@
 | GET `/bridges` | 同上筛选；`page` 从1开始，`size` 默认20、最大100 |
 | GET `/bridges/{id}` | 桥梁资料；ID 不存在、已删除或无有效关联设备返回404 |
 | GET `/bridges/{id}/monitoring/points` | 可明确关联的设备/测点/指标 |
-| GET `/bridges/{id}/monitoring/latest` | 本桥当前有效通道的最新非删除记录时间；返回 `pointId/deviceId/metric/latestAt`，无记录通道不返回；时间口径为北京时间。监测曲线默认选择有记录的测点及其最近有记录自然日，保留手动历史查询，指标列表独立滚动。非数值读数仍保留缺测断点，不据此认定设备在线。 |
+| GET `/bridges/{id}/monitoring/latest` | 本桥当前有效通道的最新非删除记录时间；返回 `pointId/deviceId/metric/latestAt`，无记录通道不返回；时间口径为北京时间。监测曲线默认查询有记录测点的最近有记录自然日；前端默认将日期映射为北京时间昨天，保留时分秒和值，原始时间及API数据不改写，手动历史查询仍显示真实日期。指标列表缓慢往返滚动，悬停暂停、移开即恢复。非数值读数仍保留缺测断点，不据此认定设备在线。 |
 | GET `/bridges/{id}/monitoring/thresholds` | 本桥独立阈值区间，可按 point/device/metric 筛选 |
 | GET `/bridges/{id}/monitoring/samples` | `point/device/metric/from/to`；最多31天，最多2000条，额外数据以 `truncated` 提示缩小范围 |
 | GET `/alarms` | 同底数筛选及 `bridgeId/level/from/to/page/size`；不传时间时按发生时间倒序返回最新记录；指定历史区间最多31天 |
