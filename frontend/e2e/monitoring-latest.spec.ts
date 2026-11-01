@@ -1,6 +1,24 @@
 import { test, expect } from "@playwright/test";
 import { nowInShanghai } from "../src/features/monitoring/displayDate";
 
+test("横轴延伸至当前时间，最后一条记录之后保留空白", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-11-01T14:26:00Z"));
+  await page.goto("/bridges/10905200071");
+  const row = page.locator(".metric-row").first();
+  await expect(row.locator(".chart-box")).toBeVisible();
+  await expect(row.locator(".chart-box")).toContainText("11-01 00:00");
+  await expect(row.locator(".chart-box")).toContainText("11-01 22:26");
+  const blank = await row.evaluate((el) => {
+    const curve = el.querySelector<SVGPathElement>(".recharts-line-curve")!;
+    const end = el.querySelectorAll<SVGLineElement>(
+      ".recharts-xAxis .recharts-cartesian-axis-tick-line",
+    );
+    const box = curve.getBBox();
+    return end[end.length - 1].x1.baseVal.value - (box.x + box.width);
+  });
+  expect(blank).toBeGreaterThan(5);
+});
+
 test("缓慢往返滚动，悬停暂停，移开立即继续且到底不跳转", async ({ page }) => {
   await page.goto("/bridges/10905200071");
   const list = page.getByRole("region", { name: "监测指标滚动列表" });

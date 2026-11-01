@@ -330,6 +330,15 @@ function MetricRow({
   const displayItems = explicitRange
     ? series.data?.items || []
     : samplesUntilNow(series.data?.items || [], displayTime);
+  const axisStart = displayRange ? Date.parse(displayRange.from + "+08:00") : 0;
+  const axisEnd = displayRange ? Date.parse(displayRange.to + "+08:00") : 0;
+  const axisTicks = [
+    ...new Set(
+      [0, 1 / 3, 2 / 3, 1].map(
+        (fraction) => axisStart + (axisEnd - axisStart) * fraction,
+      ),
+    ),
+  ];
   const thresholds = useQuery({
     queryKey: [
       "thresholds",
@@ -411,12 +420,25 @@ function MetricRow({
         <>
           <div className="chart-box">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={displayItems}>
+              <LineChart
+                data={displayItems.map((sample) => ({
+                  ...sample,
+                  timestamp: Date.parse(sample.time + "+08:00"),
+                }))}
+              >
                 <CartesianGrid stroke="#244057" strokeDasharray="3 3" />
                 <XAxis
-                  dataKey="time"
+                  dataKey="timestamp"
+                  type="number"
+                  scale="time"
+                  domain={[axisStart, Math.max(axisStart + 1, axisEnd)]}
+                  ticks={axisTicks}
+                  interval="preserveStartEnd"
+                  allowDataOverflow
                   tickFormatter={(t) =>
-                    String(t).slice(5, 16).replace("T", " ")
+                    nowInShanghai(new Date(Number(t)))
+                      .slice(5, 16)
+                      .replace("T", " ")
                   }
                   stroke="#7598ad"
                   minTickGap={35}
@@ -427,7 +449,9 @@ function MetricRow({
                     background: "#0c2236",
                     borderColor: "#2c5366",
                   }}
-                  labelFormatter={(label) => String(label).replace("T", " ")}
+                  labelFormatter={(label) =>
+                    nowInShanghai(new Date(Number(label))).replace("T", " ")
+                  }
                 />
                 {showThresholds &&
                   thresholds.data
