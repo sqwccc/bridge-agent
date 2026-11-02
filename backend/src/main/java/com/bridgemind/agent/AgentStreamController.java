@@ -27,6 +27,9 @@ public class AgentStreamController {
     private final DifyClient dify;
     private final JsonMapper json;
     private final boolean demo;
+    private final AgentMaintenanceAnswerCache answerCache;
+    @Value("${MAINTENANCE_ANSWER_CACHE_SECONDS:0}")
+    private int maintenanceAnswerCacheSeconds;
     @Value("${bridgemind.agent.enhanced:true}")
     private boolean enhanced = true;
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(AgentStreamController.class);
@@ -34,7 +37,7 @@ public class AgentStreamController {
     private final ScheduledExecutorService heartbeat=Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().daemon().factory());
     public AgentStreamController(AgentClassifier classifier, AgentEvidence evidence, DifyClient dify, JsonMapper json,
                                  @Value("${bridgemind.dify.data-mode:demo}") String mode) {
-        this.classifier=classifier;this.evidence=evidence;this.dify=dify;this.json=json;
+        this.classifier=classifier;this.evidence=evidence;this.dify=dify;this.json=json;this.answerCache=new AgentMaintenanceAnswerCache(json);
         if(!Set.of("demo","source").contains(mode))throw new IllegalArgumentException("Invalid data mode");
         demo=mode.equals("demo");
     }
@@ -99,6 +102,24 @@ public class AgentStreamController {
                 pulse=heartbeat.scheduleAtFixedRate(()->{try{send(emitter,"ping",Map.of());}catch(Exception e){cancel.run();}},10,10,TimeUnit.SECONDS);
                 send(emitter,"status",Map.of("message","正在理解问题…"));
                 var history=List.copyOf(conversation.turns);
+                var cacheKey=answerCache.key(session.getId(),body);
+                boolean cacheEligible=maintenanceAnswerCacheSeconds>0 && enhanced && !demo && history.isEmpty()
+                        && !"rule".equals(body.answerMode()) && dify.configured() && classifier.configured();
+                var cached=cacheEligible?answerCache.get(cacheKey,maintenanceAnswerCacheSeconds):null;
+                if(cached!=null) {
+                    var cachedData=new LinkedHashMap<>(cached.evidence().data());
+                    cachedData.put("回答缓存",Map.of("生成时间",cached.generatedAt().toString(),"有效秒数",Math.min(maintenanceAnswerCacheSeconds,1800)));
+                    var cachedPack=new AgentEvidence.Evidence(cachedData,cached.evidence().references());
+                    send(emitter,"plan",cached.plan());
+                    send(emitter,"evidence",cachedPack);
+                    if(cached.chart()!=null)send(emitter,"visualization",cached.chart());
+                    send(emitter,"source",Map.of("engine","model","message","Dify 模型回答（临时缓存，复用原回答与资料）"));
+                    send(emitter,"delta",Map.of("text",cached.text()));
+                    conversation.turns.add(new Turn(body.question(),cached.plan(),cached.text().substring(0,Math.min(2000,cached.text().length())),cachedPack.references()));
+                    conversation.lastEvidence=cachedPack;conversation.lastChart=cached.chart();
+                    send(emitter,"done",Map.of());
+                    return;
+                }
                 var previous=history.isEmpty()?null:history.getLast().plan();
                 boolean follow=enhanced&&AgentRules.explanation(body.question())&&previous!=null;
                 boolean rule=enhanced&&("rule".equals(body.answerMode())||!dify.configured());
@@ -181,6 +202,8 @@ public class AgentStreamController {
                     conversation.lastEvidence=pack;conversation.lastChart=chart;
                     while(conversation.turns.size()>3)conversation.turns.removeFirst();
                     send(emitter,"done",Map.of());
+                    if(cacheEligible && !rule && direct==null)
+                        answerCache.put(cacheKey,plan,pack,chart,answer.toString());
                 }
             }catch(Exception e){
                 if(!stopped.get())try{send(emitter,"error",Map.of("message",e instanceof IllegalArgumentException?Objects.toString(e.getMessage(),"查询条件无效"):"查询或模型服务暂时不可用，回答未完成，请稍后重试。"));}catch(Exception ignored){}

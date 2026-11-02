@@ -312,7 +312,9 @@ export function BridgeAgent({
                 {String(m.evidence.data["查询时间"])
                   .split("[")[0]
                   .replace("T", " ")}
-                ；相同条件的资料最多复用30秒。
+                {m.evidence.data["回答缓存"] != null
+                  ? "；本次复用临时缓存回答与原始资料，最长30分钟。"
+                  : "；相同条件的资料最多复用30秒。"}
               </small>
             )}
             {m.evidence && <EvidenceTotals data={m.evidence.data} />}

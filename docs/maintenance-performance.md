@@ -71,3 +71,14 @@ python scripts/benchmark-maintenance.py check-network --bridge network
 `--mode rule` 可单独观察取数耗时，默认使用自动模式并强制断言真实模型回答。首次查询应在缓存过期后测量。基准记录位于 `runtime/maintenance-benchmark-before-*.json`、`runtime/maintenance-benchmark-final-*.json` 和 `runtime/maintenance-benchmark-final-warm-*.json`。
 
 本次没有修改来源数据、数据库表、Dify应用或模型配置。
+
+
+## 2026-11-02 固定数据临时回答缓存
+
+在原有 30 秒资料缓存之外，增加独立的完整养护模型回答缓存。默认关闭，通过本地 `.env.local` 的 `MAINTENANCE_ANSWER_CACHE_SECONDS=1800` 开启，最大有效期限制为 30 分钟；设为 0 并重启可关闭。内存最多 64 条，重启即清空，不修改 Dify 应用或来源数据。
+
+缓存仅适用于 source 模式、增强问答、模型与分类器均已配置、自动模式的新对话首轮，且成功完成的执行计划为 business_query / maintenance_plan。键包含 HTTP 会话、完整问题原文、范围、桥梁、页面筛选、起止日期、回答模式及北京时间日期。不共享不同登录会话，不缓存规则降级、空回答、失败或中断；已有会话的追问继续正常处理。命中时复用原计划、正文、证据、引用和图表，建立当前新对话上下文，保留资料原始查询时间，并显示临时缓存说明。固定快照如被更新，应重启后端立即清空，否则最长 30 分钟后重新读取。
+
+本地启用并重启后，真实 Dify 联调：同一浏览器会话条件下，万福大桥“维修养护建议”新对话首次完整响应 20.171 秒，随后新对话同题命中小于 0.1 秒。正文、证据（排除回答缓存说明）及图表完全一致。记录见 runtime/maintenance-answer-cache-benchmark.json。此结果为单轮本机接口实测，不含浏览器绘制或公网延迟。测试过程中模型故障降级未写入缓存。
+
+相关后端测试 17 项通过，包括会话/桥梁/问题/日期隔离、超时过期、关闭开关、私有副本、命中跳过数据库及模型、追问继续调用模型、失败降级不缓存；前端构建通过。
