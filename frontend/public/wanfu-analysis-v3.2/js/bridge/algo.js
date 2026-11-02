@@ -1554,7 +1554,9 @@
     report: function (root) { Report.render(root); }
   };
 
+  var openSequence = 0;
   function open(key) {
+    var requestSequence = ++openSequence;
     A = UI.getA();
     AL = BA.alarms(A);
     cur = key;
@@ -1573,6 +1575,17 @@
     var main = document.getElementById('mMain');
     main.innerHTML = '';
     main.scrollTop = 0;
+    if (key === 'vib' && A.channels.length && global.loadAnalysisVibration && !global.analysisVibrationLoaded) {
+      main.innerHTML = '<div class="empty-tip" role="status">正在初始化振动图表…</div>';
+      global.loadAnalysisVibration().then(function () {
+        if (cur === 'vib' && requestSequence === openSequence) open('vib');
+      }, function () {
+        if (cur !== 'vib' || requestSequence !== openSequence) return;
+        main.innerHTML = '<div class="empty-tip" role="alert">振动数据加载失败 <button id="retryVibration">重试</button></div>';
+        main.querySelector('#retryVibration').onclick = function () { open('vib'); };
+      });
+      return;
+    }
     if (!A.channels.length && key !== 'rules' && !(key === 'vib' && global.BRIDGE_LIVE && Object.keys(global.BRIDGE_LIVE.channels || {}).length)) {
       main.innerHTML = '<div class="empty-tip">当前数据没有可分析的监测通道</div>';
     } else { RENDER[key](main); }

@@ -26,6 +26,7 @@ test("九个分析模块使用本地快照并正常交互", async ({ page }) => 
     "rules",
   ]) {
     await frame.locator(`[data-k="${key}"]`).click();
+    if (key === "vib") await expect(frame.locator("#vib00 svg")).toBeVisible();
     await expect(frame.locator("#mMain")).not.toBeEmpty();
     await expect(frame.locator("#mMain")).not.toContainText("NaN");
     await page.screenshot({
@@ -211,5 +212,54 @@ test("稀疏样本与缺少温度配对时保留缺数说明", async ({ page }) 
     await expect(f.locator("#mMain")).not.toBeEmpty();
     await expect(f.locator("#mMain")).not.toContainText("NaN");
   }
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("振动按需加载、失败重试、离开后不抢回页面且同页复用", async ({ page }) => {
+  let requests = 0;
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/js/live-vib.js", async (route) => {
+    requests++;
+    if (requests === 1) return route.abort();
+    await gate;
+    return route.continue();
+  });
+  await page.goto("/bridges/10905200071/analysis");
+  const f = page.frameLocator("iframe");
+  await expect(f.locator("#rFr")).toHaveValue("1.00");
+  expect(requests).toBe(0);
+  await f.locator('[data-k="vib"]').click();
+  await expect(f.getByRole("alert")).toContainText("振动数据加载失败");
+  await f.getByRole("button", { name: "重试", exact: true }).click();
+  await expect(
+    f.getByRole("status").filter({ hasText: "正在初始化振动图表" }),
+  ).toBeVisible();
+  await f.locator('[data-k="score"]').click();
+  release();
+  await expect
+    .poll(() =>
+      page
+        .frames()
+        .find((frame) =>
+          frame.url().includes("wanfu-analysis-v3.2/index.html"),
+        )!
+        .evaluate(() =>
+          Boolean(
+            (window as unknown as { analysisVibrationLoaded: boolean })
+              .analysisVibrationLoaded,
+          ),
+        ),
+    )
+    .toBe(true);
+  await expect(f.locator("#mTitle")).toContainText("A1");
+  await f.locator('[data-k="vib"]').click();
+  await expect(f.locator("#vib00 svg")).toBeVisible();
+  await f.locator('[data-k="score"]').click();
+  await f.locator('[data-k="vib"]').click();
+  await expect(f.locator("#vib00 svg")).toBeVisible();
+  expect(requests).toBe(2);
   await expect(page.getByRole("alert")).toHaveCount(0);
 });

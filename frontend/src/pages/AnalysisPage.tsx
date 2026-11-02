@@ -6,7 +6,9 @@ export function AnalysisPage() {
   const frame = useRef<HTMLIFrameElement>(null);
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState("loading");
+  const [showLoading, setShowLoading] = useState(false);
   useEffect(() => {
+    const loadingDelay = window.setTimeout(() => setShowLoading(true), 500);
     const timer = window.setTimeout(() => setStatus("error"), 15000);
     const receive = (event: MessageEvent) => {
       if (event.source !== frame.current?.contentWindow) return;
@@ -21,6 +23,7 @@ export function AnalysisPage() {
     window.addEventListener("message", receive);
     return () => {
       clearTimeout(timer);
+      clearTimeout(loadingDelay);
       window.removeEventListener("message", receive);
     };
   }, [attempt]);
@@ -32,13 +35,16 @@ export function AnalysisPage() {
         <button
           onClick={() => {
             setStatus("loading");
+            setShowLoading(false);
             setAttempt(attempt + 1);
           }}
         >
           重新加载
         </button>
       </header>
-      {status === "loading" && <p role="status">正在载入分析数据…</p>}
+      {status === "loading" && showLoading && (
+        <p role="status">正在初始化图表…</p>
+      )}
       {status === "error" && (
         <p role="alert">分析模块加载失败，请点击“重新加载”重试。</p>
       )}
