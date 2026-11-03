@@ -101,6 +101,61 @@ class SourceMapperIntegrationTest {
         }
     }
 
+    @Test
+    void alarmHandlingKeepsLatestValidCityScopedRowAndPagination() throws Exception {
+        String fixtures = "WITH " + records("dwd_ql_js_ql_inc", """
+                [{"qlid":"B1","sscsdm":"320100","sczt":0},
+                 {"qlid":"B2","sscsdm":"320200","sczt":0}]
+                """) + "," + records("dwd_ql_jc_jcd_inc", """
+                [{"bsm":"P1","ssbm":"B1","sscsdm":"320100","jclx":70},
+                 {"bsm":"P2","ssbm":"B2","sscsdm":"320200","jclx":70}]
+                """) + "," + records("dwd_ql_jc_jcsb_inc", """
+                [{"bsm":"D1","dwbsm":"P1","sscsdm":"320100"},
+                 {"bsm":"D2","dwbsm":"P2","sscsdm":"320200"}]
+                """) + "," + records("dwd_ql_jc_jcbj_data", """
+                [{"bsm":"A1","bjbh":"shared","dwbsm":"P1","sscsdm":"320100","bjsj":"2026-01-03T00:00:00"},
+                 {"bsm":"A2","bjbh":"shared","dwbsm":"P2","sscsdm":"320200","bjsj":"2026-01-02T00:00:00"},
+                 {"bsm":"A3","bjbh":"none","dwbsm":"P1","sscsdm":"320100","bjsj":"2026-01-01T00:00:00"}]
+                """) + "," + records("dwd_ql_jc_bjcz_data", """
+                [{"bsm":"old","bjbh":"shared","xzqhdm":"320101","czzt":0,"gxsj":"2026-01-01T00:00:00"},
+                 {"bsm":"a","bjbh":"shared","xzqhdm":"320102","czzt":1,"gxsj":"2026-01-02T00:00:00","wcczsj":"2026-01-02T01:00:00"},
+                 {"bsm":"b","bjbh":"shared","xzqhdm":"320103","czzt":2,"gxsj":"2026-01-02T00:00:00"},
+                 {"bsm":"deleted","bjbh":"shared","xzqhdm":"320101","czzt":3,"gxsj":"2026-01-04T00:00:00","sjtbzt":"D"},
+                 {"bsm":"nulltime","bjbh":"shared","xzqhdm":"320101","czzt":4},
+                 {"bsm":"city2","bjbh":"shared","xzqhdm":"320201","czzt":2,"gxsj":"2026-01-05T00:00:00"},
+                 {"bsm":"onlydeleted","bjbh":"none","xzqhdm":"320101","czzt":3,"sjtbzt":"D"}]
+                """) + ",";
+        var ms = factory.getConfiguration().getMappedStatement("com.bridgemind.alarm.mapper.AlarmMapper.list");
+        var params = new HashMap<String, Object>();
+        params.put("filter", new BridgeFilter(null, null, null, null));
+        params.put("limit", 2);
+        try (var c = connection()) {
+            var statuses = new LinkedHashMap<String, String>();
+            for (int offset : List.of(0, 2)) {
+                params.put("offset", offset);
+                var bound = ms.getBoundSql(params);
+                String sql = fixtures + bound.getSql().stripLeading().substring(4);
+                try (var ps = c.prepareStatement(sql)) {
+                    new DefaultParameterHandler(ms, params, bound).setParameters(ps);
+                    try (var rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            assertEquals(3, rs.getLong("matching_total"));
+                            String id = rs.getString("id");
+                            assertFalse(statuses.containsKey(id));
+                            statuses.put(id, rs.getString("handling_status"));
+                            if (id.equals("A1")) assertEquals("2026-01-02T01:00", rs.getTimestamp("handled_at").toLocalDateTime().toString());
+                            if (id.equals("A3")) assertNull(rs.getTimestamp("handled_at"));
+                        }
+                    }
+                }
+            }
+            assertEquals(List.of("A1", "A2", "A3"), new ArrayList<>(statuses.keySet()));
+            assertEquals("1", statuses.get("A1"));
+            assertEquals("2", statuses.get("A2"));
+            assertNull(statuses.get("A3"));
+        }
+    }
+
     static String records(String table, String json) {
         return table + " AS (SELECT * FROM jsonb_populate_recordset(NULL::" + config.getOrDefault("SOURCE_DB_SCHEMA", "qiaoliang") + "." + table + ",'" + json + "'::jsonb))";
     }

@@ -22,11 +22,14 @@
         SELECT a.bsm AS id,a.bridge_id,a.bridge_name,a.sscsdm AS city_code,a.bjsj AS time,a.bjmc AS name,
         a.jcbjzb AS metric,a.bjjb AS level,a.bjz AS value,a.bjyz AS threshold,h.czzt::text AS handling_status,h.wcczsj
         AS handled_at,count(*) OVER() AS matching_total
-        FROM filtered a LEFT JOIN LATERAL (
-        SELECT czzt,wcczsj FROM dwd_ql_jc_bjcz_data h WHERE h.bjbh=a.bjbh
-        AND left(h.xzqhdm,4)=left(a.sscsdm,4) AND coalesce(h.sjtbzt,'')!='D'
-        ORDER BY h.gxsj DESC NULLS LAST,h.bsm LIMIT 1
-        ) h ON true
+        <!-- Vastbase G100 V2.2 does not accept LATERAL subqueries. Rank before joining to keep one
+             valid handling record per alarm/city, without multiplying alarms or dropping unhandled ones. -->
+        FROM filtered a LEFT JOIN (
+        SELECT h.bjbh,left(h.xzqhdm,4) AS city_prefix,h.czzt,h.wcczsj,
+        row_number() OVER (PARTITION BY h.bjbh,left(h.xzqhdm,4)
+        ORDER BY h.gxsj DESC NULLS LAST,h.bsm) AS handling_rank
+        FROM dwd_ql_jc_bjcz_data h WHERE coalesce(h.sjtbzt,'')!='D'
+        ) h ON h.bjbh=a.bjbh AND h.city_prefix=left(a.sscsdm,4) AND h.handling_rank=1
         <include refid="conditions"/>
         ORDER BY a.bjsj DESC,a.bsm,a.sscsdm LIMIT #{limit} OFFSET #{offset}
     </select>
