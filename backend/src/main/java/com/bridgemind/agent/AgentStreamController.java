@@ -97,6 +97,7 @@ public class AgentStreamController {
         var worker=Thread.ofVirtual().unstarted(()->{
             ScheduledFuture<?> pulse=null;
             long started=System.nanoTime();
+            String stage="classification";
             try{
                 send(emitter,"meta",Map.of("conversationId",conversation.id,"dataMode",demo?"demo":"source"));
                 pulse=heartbeat.scheduleAtFixedRate(()->{try{send(emitter,"ping",Map.of());}catch(Exception e){cancel.run();}},10,10,TimeUnit.SECONDS);
@@ -132,10 +133,11 @@ public class AgentStreamController {
                 }catch(Exception classificationFailure){
                     if(stopped.get()||Thread.currentThread().isInterrupted())return;
                     if(!enhanced)throw classificationFailure;
-                    LOG.info("agent classifier fallback");
+                    logFailure(conversation.id,"classification-fallback",classificationFailure);
                     rule=true;plan=AgentRules.classify(body.question(),body.scope(),previous);
                 }
                 if(stopped.get())return;
+                stage="planning";
                 plan=effectivePlan(plan,body);
                 if(!enhanced&&plan.monitoring()!=null)plan=AgentRules.clarify("监测分析增强功能尚未启用。");
                 send(emitter,"plan",plan);
@@ -156,6 +158,7 @@ public class AgentStreamController {
                     if(plan.route().equals("domain_knowledge"))context=Map.of("知识范围","BCI为完好状况评价，BSI为结构状况评价，当前来源为独立等级不是数值分数。Ⅰ类养护用合格/不合格，Ⅱ～Ⅴ类用A～E，类别冲突、缺失、未知编码需单列。设备存在不等于在线，历史报警不等于当前异常。仅解释这些知识与业务字典，其他知识明确资料未提供。",
                             "字典",com.bridgemind.work.service.WorkDictionary.all());
                     else{
+                        stage="evidence";
                         send(emitter,"status",Map.of("message","正在查询桥梁资料…"));
                         long queryStarted=System.nanoTime();
                         pack=follow&&conversation.lastEvidence!=null?conversation.lastEvidence:evidence.build(plan,body.bridgeId(),demo);
@@ -168,6 +171,7 @@ public class AgentStreamController {
                         }
                         LOG.info("agent evidence durationMs={}",TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-queryStarted));
                     }
+                    stage="generation";
                     send(emitter,"status",Map.of("message","正在生成回答…"));
                     String fallback=pack==null?"**结论**：BCI为完好状况评价，BSI为结构状况评价；Ⅰ类合格/不合格与Ⅱ～Ⅴ类A～E分别解释。等级不能折算健康分，设备存在不等于在线。":
                             AgentPresentation.answer(pack,body.question(),chart,json);
@@ -187,7 +191,7 @@ public class AgentStreamController {
                         }catch(Exception generationFailure){
                             if(stopped.get()||Thread.currentThread().isInterrupted())return;
                             if(!enhanced)throw generationFailure;
-                            rule=true;LOG.info("agent answer fallback");
+                            rule=true;logFailure(conversation.id,"generation-fallback",generationFailure);
                         }
                     }
                     if(rule){
@@ -206,8 +210,17 @@ public class AgentStreamController {
                         answerCache.put(cacheKey,plan,pack,chart,answer.toString());
                 }
             }catch(Exception e){
-                if(!stopped.get())try{send(emitter,"error",Map.of("message",e instanceof IllegalArgumentException?Objects.toString(e.getMessage(),"查询条件无效"):"查询或模型服务暂时不可用，回答未完成，请稍后重试。"));}catch(Exception ignored){}
-            }finally{LOG.info("agent request durationMs={}",TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started));if(pulse!=null)pulse.cancel(false);cancel.run();conversation.busy.set(false);capacity.release();emitter.complete();}
+                if(!stopped.get()){
+                    logFailure(conversation.id,stage,e);
+                    String message=switch(stage){
+                        case "classification" -> "问题分类服务调用失败，请检查 Dify 分类应用连接、密钥和模型配置。";
+                        case "planning" -> "问题分类结果无法生成查询计划，请检查分类应用输出配置。";
+                        case "evidence" -> "桥梁资料查询失败，回答未完成，请检查后端数据查询日志。";
+                        default -> "回答生成失败，请检查 Dify 回答应用连接和模型配置。";
+                    };
+                    try{send(emitter,"error",Map.of("message",message,"stage",stage,"requestId",conversation.id));}catch(Exception ignored){}
+                }
+            }finally{LOG.info("agent request requestId={} durationMs={}",conversation.id,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started));if(pulse!=null)pulse.cancel(false);cancel.run();conversation.busy.set(false);capacity.release();emitter.complete();}
         });
         task.set(worker);worker.start();return emitter;
     }
@@ -226,5 +239,10 @@ public class AgentStreamController {
     private void send(SseEmitter emitter,String event,Object value){
         try{emitter.send(SseEmitter.event().name(event).data(json.writeValueAsString(value),new MediaType("application","json",java.nio.charset.StandardCharsets.UTF_8)));}
         catch(Exception e){throw new IllegalStateException("连接已断开");}
+    }
+    private void logFailure(String requestId,String stage,Exception error){
+        // Do not log exception messages/bodies: upstream errors may contain credentials or queries.
+        String status=error instanceof ResponseStatusException response?String.valueOf(response.getStatusCode().value()):"none";
+        LOG.warn("agent failure requestId={} stage={} type={} status={}",requestId,stage,error.getClass().getSimpleName(),status);
     }
 }

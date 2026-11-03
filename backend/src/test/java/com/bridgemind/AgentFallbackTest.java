@@ -59,4 +59,22 @@ class AgentFallbackTest {
     private void controllerClose(AgentStreamController controller)throws Exception{
         var method=AgentStreamController.class.getDeclaredMethod("close");method.setAccessible(true);method.invoke(controller);
     }
+    @Test void classifierFailureReportsStageWithoutLeakingUpstreamDetails()throws Exception{
+        var classifier=mock(AgentClassifier.class);var evidence=mock(AgentEvidence.class);var dify=mock(DifyClient.class);
+        when(classifier.configured()).thenReturn(true);when(dify.configured()).thenReturn(true);
+        when(classifier.classify(anyString(),anyString(),any(),any(),anyString()))
+                .thenThrow(new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_GATEWAY,"secret-key private-host"));
+        var controller=new AgentStreamController(classifier,evidence,dify,json,"source");
+        org.springframework.test.util.ReflectionTestUtils.setField(controller,"enhanced",false);
+        try{
+            var mvc=MockMvcBuilders.standaloneSetup(controller).build();
+            var response=ask(mvc,new MockHttpSession(),Map.of("scope","network","question","接入桥梁概况"));
+            assertTrue(response.contains("event:error"),response);
+            assertTrue(response.contains("\"stage\":\"classification\""),response);
+            assertTrue(response.contains("requestId"),response);
+            assertFalse(response.contains("secret-key"));assertFalse(response.contains("private-host"));
+            assertFalse(response.contains("event:done"));
+            verifyNoInteractions(evidence);
+        }finally{controllerClose(controller);}
+    }
 }

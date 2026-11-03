@@ -8,6 +8,7 @@ import java.util.*;
 
 @Service
 public class AgentClassifier {
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(AgentClassifier.class);
     private final DifyClient client;
     private final JsonMapper json;
     public AgentClassifier(@Value("${bridgemind.dify.base-url:http://127.0.0.1:8090/v1}") String url,
@@ -27,6 +28,9 @@ public class AgentClassifier {
             if (scope.equals("bridge") && (!plan.bridgeFilter().q().isEmpty() || !plan.bridgeFilter().city().isEmpty()))
                 return new AgentPlan("clarification_required", "overview", null, null, null, null, "单桥问答固定查询当前桥梁；查询其他桥梁请从总体问答进入或切换桥梁。");
             return plan;
-        } catch (Exception e) { throw new IllegalArgumentException("未能可靠识别查询条件，请说明桥梁范围、业务类型和日期"); }
+        } catch (Exception e) {
+            LOG.warn("agent classifier failure requestId={} reason=invalid_plan type={}",user,e.getClass().getSimpleName());
+            throw new IllegalArgumentException("未能可靠识别查询条件，请说明桥梁范围、业务类型和日期");
+        }
     }
 }
