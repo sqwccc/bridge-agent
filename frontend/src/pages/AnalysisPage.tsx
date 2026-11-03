@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
+import { appUrl } from "../api/url";
 import "../styles/analysis.css";
 
 export function AnalysisPage() {
@@ -52,7 +53,7 @@ export function AnalysisPage() {
         key={attempt}
         ref={frame}
         title="万福大桥分析模块"
-        src="/wanfu-analysis-v3.2/index.html"
+        src={appUrl("/wanfu-analysis-v3.2/index.html")}
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
         onError={() => setStatus("error")}
