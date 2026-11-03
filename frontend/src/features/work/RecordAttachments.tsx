@@ -36,8 +36,6 @@ export function RecordAttachments({
         { credentials: "include" },
       );
       if (!response.ok) {
-        if (response.status === 401)
-          window.dispatchEvent(new Event("session-expired"));
         throw new Error(
           (await response.json().catch(() => null))?.message || "附件读取失败",
         );

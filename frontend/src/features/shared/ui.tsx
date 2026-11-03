@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
-import { post } from "../../api/client";
-import { useAccessConfig } from "../../app/access";
 import { Drawer } from "antd";
 import { BridgeAgent } from "../agent/BridgeAgent";
 
@@ -159,7 +157,6 @@ export function Topbar({
   metrics?: ReactNode;
 }) {
   const [clock, setClock] = useState(new Date());
-  const access = useAccessConfig();
   const location = useLocation();
   useEffect(() => {
     const timer = setInterval(() => setClock(new Date()), 1000);
@@ -201,20 +198,6 @@ export function Topbar({
           >
             全屏
           </button>
-          {!access.data?.previewEnabled && (
-            <button
-              onClick={async () => {
-                try {
-                  await post("auth/logout");
-                  window.dispatchEvent(new Event("session-expired"));
-                } catch {
-                  alert("退出失败，请重试");
-                }
-              }}
-            >
-              退出
-            </button>
-          )}
         </div>
         <time
           dateTime={clock.toISOString()}

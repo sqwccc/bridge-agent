@@ -1,33 +1,12 @@
 import { test, expect } from "@playwright/test";
-import { readFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 
-const account = JSON.parse(
-  readFileSync(path.resolve("../runtime/local-account.json"), "utf8").replace(
-    /^\uFEFF/,
-    "",
-  ),
-) as { username: string; password: string };
-
-// 即使本地开启只读预览，也在浏览器中启用门禁，验证真实登录/退出接口。
-test.beforeEach(async ({ page }) => {
-  await page.route("**/api/v1/auth/config", (route) =>
-    route.fulfill({ json: { code: "OK", data: { previewEnabled: false } } }),
-  );
-});
-
-test("登录、地图筛选、桥梁下钻、刷新和退出", async ({ page }) => {
+test("免登录进入、地图筛选、桥梁下钻和刷新", async ({ page }) => {
   // 准备：独立浏览器上下文，不继承登录状态。
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/screen");
-  await expect(page).toHaveURL(/login/);
-  await page.getByLabel("账号", { exact: true }).fill(account.username);
-  await page.getByLabel("密码", { exact: true }).fill("incorrect-password");
-  await page.getByRole("button", { name: "登录驾驶舱" }).click();
-  await expect(page.getByRole("alert")).toContainText("账号或密码错误");
-  await page.getByLabel("密码", { exact: true }).fill(account.password);
-  await page.getByRole("button", { name: "登录驾驶舱" }).click();
   await expect(page).toHaveURL(/screen/);
   await expect(page.locator(".kpi").first()).toContainText("131", {
     timeout: 30000,
@@ -87,7 +66,7 @@ test("登录、地图筛选、桥梁下钻、刷新和退出", async ({ page }) 
     "万福",
   );
   await page.locator(".bridge-list-drawer .ant-drawer-close").click();
-  // 验证：清除条件、4K无横向溢出、退出后不能再次访问数据页。
+  // 验证：清除条件、4K无横向溢出、刷新后仍可匿名访问数据页。
   await page.getByRole("button", { name: "重置", exact: true }).click();
   await page.setViewportSize({ width: 3840, height: 2160 });
   await expect(page.locator(".kpi").first()).toContainText("131");
@@ -100,18 +79,16 @@ test("登录、地图筛选、桥梁下钻、刷新和退出", async ({ page }) 
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
-  await page.getByRole("button", { name: "退出", exact: true }).click();
-  await expect(page).toHaveURL(/login/);
-  await page.goto("/screen");
-  await expect(page).toHaveURL(/login/);
+  await expect(
+    page.getByRole("button", { name: "退出", exact: true }),
+  ).toHaveCount(0);
+  await page.goto("/login");
+  await expect(page).toHaveURL(/screen/);
   expect(errors).toEqual([]);
 });
 
 test("单桥历史报警、无监测值、报告来源缺失及空搜索", async ({ page }) => {
-  await page.goto("/login");
-  await page.getByLabel("账号", { exact: true }).fill(account.username);
-  await page.getByLabel("密码", { exact: true }).fill(account.password);
-  await page.getByRole("button", { name: "登录驾驶舱" }).click();
+  await page.goto("/screen");
   await expect(page).toHaveURL(/screen/);
   await page.goto("/bridges/10020200311");
   await expect(
@@ -153,10 +130,7 @@ test("来源故障显示错误并可重试恢复，不能显示成零座桥梁",
       },
     }),
   );
-  await page.goto("/login");
-  await page.getByLabel("账号", { exact: true }).fill(account.username);
-  await page.getByLabel("密码", { exact: true }).fill(account.password);
-  await page.getByRole("button", { name: "登录驾驶舱" }).click();
+  await page.goto("/screen");
   await expect(page.getByRole("alert")).toContainText("数据服务暂不可用", {
     timeout: 15000,
   });
@@ -190,10 +164,7 @@ test("隔离监测夹具：数值曲线与缺测断点正常渲染", async ({ pa
       },
     }),
   );
-  await page.goto("/login");
-  await page.getByLabel("账号", { exact: true }).fill(account.username);
-  await page.getByLabel("密码", { exact: true }).fill(account.password);
-  await page.getByRole("button", { name: "登录驾驶舱" }).click();
+  await page.goto("/screen");
   await expect(page).toHaveURL(/screen/);
   await page.goto("/bridges/10020200311");
   await expect(

@@ -70,8 +70,6 @@ export async function streamAgent(
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    if (response.status === 401)
-      window.dispatchEvent(new Event("session-expired"));
     const data = await response.json().catch(() => null);
     throw new Error(data?.message || "问答请求失败");
   }

@@ -72,7 +72,7 @@ export async function post<T>(
   }
 }
 
-/** Editing keeps the current draft on authentication expiry. */
+/** 保存失败时保留当前编辑内容。 */
 export async function put<T>(path: string, body: unknown): Promise<T> {
   const csrf = await api<{ token: string; headerName: string }>("auth/csrf");
   try {
@@ -86,20 +86,14 @@ export async function put<T>(path: string, body: unknown): Promise<T> {
         .json<ApiResponse<T>>()
     ).data;
   } catch (e) {
-    throw await normalize(e, false);
+    throw await normalize(e);
   }
 }
 
-async function normalize(e: unknown, notifySession = true) {
+async function normalize(e: unknown) {
   if (e instanceof HTTPError) {
     // ky 2 已消费响应体并保存在 data，不能再次 response.json()。
     const payload = e.data as ApiResponse<unknown> | undefined;
-    if (
-      notifySession &&
-      e.response.status === 401 &&
-      !e.request.url.endsWith("/auth/login")
-    )
-      window.dispatchEvent(new Event("session-expired"));
     return new ApiError(e.response.status, payload?.message || "请求失败");
   }
   return new ApiError(0, "数据服务连接失败，请稍后重试");

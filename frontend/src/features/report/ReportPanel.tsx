@@ -56,8 +56,6 @@ export function ReportPanel({ bridgeId }: { bridgeId: string }) {
         credentials: "include",
       });
       if (!response.ok) {
-        if (response.status === 401)
-          window.dispatchEvent(new Event("session-expired"));
         const payload = await response.json().catch(() => null);
         throw new Error(
           payload?.message || `文件读取失败（${response.status}）`,

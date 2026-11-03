@@ -1,22 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
-import { readFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import type { Bridge, Dashboard, Group } from "../src/api/types";
 import type { Page as ApiPage } from "../src/api/client";
 
 async function enter(page: Page) {
-  const config = await (await page.request.get("/api/v1/auth/config")).json();
   await page.goto("/screen");
-  if (!config.data.previewEnabled) {
-    const account = JSON.parse(
-      readFileSync("../runtime/local-account.json", "utf8").replace(
-        /^\uFEFF/,
-        "",
-      ),
-    );
-    await page.getByLabel("账号", { exact: true }).fill(account.username);
-    await page.getByLabel("密码", { exact: true }).fill(account.password);
-    await page.getByRole("button", { name: "登录驾驶舱" }).click();
-  }
   await expect(page).toHaveURL(/screen/);
 }
 

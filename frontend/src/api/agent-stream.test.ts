@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+vi.mock("./url", () => ({ apiBaseUrl: new URL("http://localhost/api/v1/") }));
 vi.mock("./client", () => ({ api: vi.fn() }));
 import { readAgentStream } from "./agent-stream";
 
