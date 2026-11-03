@@ -15,7 +15,7 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import javax.sql.DataSource;
 
 /**
- * 两个显式连接池与 Mapper 扫描边界；Flyway 仅使用主业务数据源。
+ * 两个显式连接池与 Mapper 扫描边界；应用表由部署人员手动导入SQL。
  */
 @Configuration
 @MapperScan(basePackages = "com.bridgemind.auth.mapper", sqlSessionFactoryRef = "appSqlSessionFactory")

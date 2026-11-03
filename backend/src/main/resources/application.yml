@@ -3,12 +3,6 @@ spring:
     name: bridgemind
   profiles:
     default: dev
-  flyway:
-    default-schema: ${APP_DB_SCHEMA:public}
-    schemas: ${APP_DB_SCHEMA:public}
-    create-schemas: false
-    locations: classpath:db/migration
-    validate-migration-naming: true
 server:
   port: ${SERVER_PORT:8088}
   servlet:

@@ -1,4 +1,5 @@
 import { api } from "./client";
+import { apiBaseUrl } from "./url";
 
 export type StreamEvent = { event: string; data: Record<string, unknown> };
 
@@ -56,10 +57,7 @@ export async function streamAgent(
 ) {
   const csrf = await api<{ token: string; headerName: string }>("auth/csrf");
   signal.throwIfAborted();
-  const base = new URL(
-    import.meta.env.VITE_API_BASE_URL || "/api/v1/",
-    location.origin,
-  );
+  const base = apiBaseUrl;
   const response = await fetch(new URL("agent/ask", base), {
     method: "POST",
     credentials: "include",

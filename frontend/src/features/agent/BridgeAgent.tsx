@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../../api/client";
+import { appUrl } from "../../api/url";
 import { streamAgent } from "../../api/agent-stream";
 import { AgentChart, type Visualization } from "./AgentChart";
 
@@ -345,7 +346,7 @@ export function BridgeAgent({
                     key={r.id}
                     href={
                       r.url.startsWith("/") && !r.url.startsWith("//")
-                        ? r.url
+                        ? appUrl(r.url)
                         : undefined
                     }
                     target="_blank"

@@ -18,6 +18,7 @@ services:
       TZ: Asia/Shanghai
       DIFY_BASE_URL: ${DIFY_BASE_URL:-http://host.docker.internal:8090/v1}
       DIFY_API_KEY: ${DIFY_API_KEY:-}
+      DIFY_CLASSIFIER_API_KEY: ${DIFY_CLASSIFIER_API_KEY:-}
       DIFY_DATA_MODE: ${DIFY_DATA_MODE:-demo}
     extra_hosts:
       - host.docker.internal:host-gateway

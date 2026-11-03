@@ -1,5 +1,12 @@
 # 环境与部署
 
+## 2026-10-28 更新：改为手动建表
+
+当前后端已移除 Flyway 依赖及自动迁移。生产先在 `paishui_db` 执行
+`deploy/cce/sql/01_create_bridge_agent.sql`，再执行同目录 `02_verify_bridge_agent.sql` 核对结构，最后启动镜像。
+使用 `paishui` 账号，应用 schema 为 `bridge_agent`；既有业务数据和旧迁移历史均保留。
+下文关于 Flyway 自动建表的历史说明不再适用于当前版本。其他环境手动导入前应按其目标 schema 调整 SQL。
+
 ## 本地开发
 
 `dev` 是默认 Spring Profile。开发脚本读取根目录 `.env.local`；直接运行 Maven 时，可使用系统环境变量覆盖配置。前端 `BACKEND_URL` 控制开发代理，默认 `http://localhost:8088`；`VITE_API_BASE_URL` 默认 `/api/v1/`。

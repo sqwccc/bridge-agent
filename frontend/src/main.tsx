@@ -1,3 +1,4 @@
+import "./compat";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router";
@@ -32,7 +33,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       }}
     >
       <QueryClientProvider client={client}>
-        <BrowserRouter>
+        <BrowserRouter basename={import.meta.env.BASE_URL}>
           <App />
         </BrowserRouter>
       </QueryClientProvider>

@@ -45,7 +45,7 @@ public class SecurityConfig {
     SecurityFilterChain filterChain(HttpSecurity http, SecurityContextRepository repository) throws Exception {
         http.authorizeHttpRequests(a -> {
                     a.dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ASYNC).permitAll();
-                    a.requestMatchers("/actuator/health", "/api/v1/auth/config", "/api/v1/auth/csrf", "/api/v1/auth/login").permitAll();
+                    a.requestMatchers("/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness", "/api/v1/auth/config", "/api/v1/auth/csrf", "/api/v1/auth/login").permitAll();
                     if (previewEnabled && agentPreviewAccess)
                         a.requestMatchers(HttpMethod.POST, "/api/v1/bridges/*/agent/ask", "/api/v1/agent/ask").permitAll();
                     a.requestMatchers(HttpMethod.PUT, "/api/v1/bridges/*/structure-config").permitAll();

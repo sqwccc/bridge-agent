@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Modal } from "antd";
 import type { Report } from "../../api/types";
+import { apiUrl } from "../../api/url";
 
 /** 附件经同源接口读取，失败显示在当前记录内，关闭预览后释放 Blob。 */
 export function RecordAttachments({
@@ -29,7 +30,9 @@ export function RecordAttachments({
     setError("");
     try {
       const response = await fetch(
-        `/api/v1/${basePath}/attachments/${encodeURIComponent(file.id)}/file?download=${download}`,
+        apiUrl(
+          `${basePath}/attachments/${encodeURIComponent(file.id)}/file?download=${download}`,
+        ),
         { credentials: "include" },
       );
       if (!response.ok) {

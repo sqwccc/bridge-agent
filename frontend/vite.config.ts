@@ -9,6 +9,11 @@ if (!["http:", "https:"].includes(publicUrl.protocol)) {
 }
 
 export default defineConfig({
+  base: process.env.VITE_APP_BASE_PATH || "/",
+  build: {
+    target: ["firefox79", "chrome80"],
+    cssTarget: ["firefox79", "chrome80"],
+  },
   plugins: [react()],
   server: {
     host: "127.0.0.1",

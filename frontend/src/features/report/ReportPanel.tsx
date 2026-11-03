@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Modal, Select } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
+import { apiUrl } from "../../api/url";
 import type { Report } from "../../api/types";
 import { time } from "../../api/types";
 import { Empty, ErrorState, Panel } from "../shared/ui";
@@ -43,7 +44,9 @@ export function ReportPanel({ bridgeId }: { bridgeId: string }) {
     [preview],
   );
   const fileUrl = (r: Report) =>
-    `/api/v1/bridges/${encodeURIComponent(bridgeId)}/reports/${encodeURIComponent(r.id)}/file`;
+    apiUrl(
+      `bridges/${encodeURIComponent(bridgeId)}/reports/${encodeURIComponent(r.id)}/file`,
+    );
   const readFile = async (r: Report, download: boolean) => {
     const version = ++requestVersion.current;
     setLoading(r.id);

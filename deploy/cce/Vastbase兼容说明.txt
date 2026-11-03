@@ -1,0 +1,23 @@
+2026-10-28 Vastbase G100 V2.2 Build 10 启动兼容修复
+
+已确认：普通账号可连接，但SET ROLE '当前用户'返回42602 set role denied。
+Flyway PostgreSQL适配器在恢复连接状态时发送该语句，导致启动失败。
+
+修复：通过Flyway插件识别SELECT version()包含Vastbase G100的服务端。
+只有当前用户、会话用户都等于连接初始化时身份时，省略冗余SET ROLE。
+发现角色或会话身份变化仍报错终止，不隐式提升权限或发送密码。
+普通PostgreSQL仍使用原适配器。现有V1/V2迁移文件及校验和未修改，Flyway未关闭。
+
+新私有镜像标签：bridgemind:20261028-cce-vastbase1。
+内置应用库地址修正为3.141.179.50:5432/paishui_db，schema仍为bridge_agent。
+其他默认配置与此前用户提供的信息一致，CCE环境变量仍优先于内置默认值。
+镜像包含生产凭据，仅限私有仓库；不要输出或公开镜像内默认配置文件。
+
+验证：64项后端测试，0失败、15项来源库测试跳过。
+隔离PostgreSQL15加G100版本/SET ROLE拒绝行为模拟：原路径复现失败；修复后首次迁移、重复迁移、校验和异常拒绝通过。
+这不是实际Vastbase服务端测试，尚不能保证Vastbase全部SQL、类型和业务查询兼容。
+数据库与应用服务器CPU架构不必相同；镜像仍为Linux/AMD64。
+
+上线后日志应出现：Using Vastbase G100 migration adapter
+并检查迁移完成和Started BridgeMindApplication。
+如有新错误，提供完整日志以定位后续兼容项；不要关闭Flyway或手动篡改校验和。

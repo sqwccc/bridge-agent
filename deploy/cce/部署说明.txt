@@ -1,0 +1,96 @@
+BridgeMind CCE 单镜像离线部署
+
+当前版本：手动建表版bridgemind:20261028-cce-manualsql-p18089。
+先执行sql/01_create_bridge_agent.sql和sql/02_verify_bridge_agent.sql，再启动应用。
+镜像导入、tag和push命令请使用实际交付的manualsql标签及文件名；下文旧标签仅为操作示例。
+
+交付：Linux/AMD64 单容器镜像，包含前端、Nginx、Java 25 后端。
+容器端口：18089。Java仅监听容器内部127.0.0.1:8088。
+默认prod,cce模式：免登录浏览、免登录问答；保留CSRF和Session；不初始化登录账号。
+镜像不包含数据库密码、Dify密钥或本地.env文件。附件服务暂不配置。
+
+1. 导入和上传镜像
+校验SHA256SUMS.txt中的摘要后执行：
+docker load -i bridgemind-20261028-cce-linux-amd64.tar
+docker images bridgemind
+
+CCE通常从镜像仓库拉取镜像，并不是直接上传tar后运行。
+在SWR控制台获取登录指令，按实际区域和组织替换以下占位符：
+docker tag bridgemind:20261028-cce <SWR地址>/<组织>/bridgemind:20261028-cce
+docker push <SWR地址>/<组织>/bridgemind:20261028-cce
+若采用自有镜像仓库，使用CCE节点可访问的仓库地址。
+不要使用docker import，它会丢失此镜像的启动配置；应使用docker load。
+
+2. 数据库准备（由数据库管理员执行，禁止导入本地桥梁测试副本）
+应用库：3.141.179.50:5432/paishui_db，schema=bridge_agent。
+来源库：3.130.142.177:5432/qiaoliang_db，schema=qiaoliang。
+应用库bridge_agent及应用表必须手动建立；应用已移除Flyway依赖。
+若不存在，可由数据库管理员连接paishui_db执行：
+CREATE SCHEMA IF NOT EXISTS bridge_agent AUTHORIZATION paishui;
+如果schema已经存在，核实paishui账号具有USAGE、CREATE以及应用表所需权限。
+手动SQL负责建立应用表。启动时不执行迁移，不创建迁移历史，不创建登录账号。
+来源连接只读，需具备qiaoliang内业务表的SELECT和schema USAGE权限。
+先查询SELECT version();确认两端PostgreSQL版本；数据库版本兼容性与生产数据结构尚待目标环境验证。
+
+3. CCE环境配置
+将production.env.example中的各项添加为CCE环境变量，或创建名为bridgemind-env的Opaque Secret。
+需要填写四个占位值：两个数据库密码、回答应用Key、分类应用Key。
+应用Key来自生产环境Dify对应应用；Dify模型供应商Key不填到这里。
+模板已配置生产地址和两个schema；不得把currentSchema从JDBC地址中删除。
+SPRING_PROFILES_ACTIVE必须是prod,cce。
+PREVIEW_ENABLED=true与DIFY_PREVIEW_ACCESS=true共同启用免登录问答。
+DIFY_DATA_MODE=source使用实际来源数据。
+REPORT_BASE_URL保持空，不配置附件服务。
+
+如果使用kubectl，可在受控环境填写production.env后执行（不要把实际文件提交代码库）：
+kubectl create secret generic bridgemind-env --from-env-file=production.env -n <命名空间>
+Secret、Deployment、Service必须在同一命名空间。
+
+4. 创建工作负载
+CCE选择无状态工作负载Deployment，镜像使用上传后的SWR完整地址。
+启动命令和参数留空，使用镜像自带入口。
+容器端口18089，架构Linux/AMD64，副本数先设为1。
+参考资源：请求0.5核/768Mi，限制2核/2Gi；按实际负载调整。
+JVM默认MaxRAMPercentage=65.0，为Nginx和非堆内存留余量。
+不需要挂载持久化目录；应用数据写入外部数据库，日志写到标准输出。
+启动探针：HTTP /health/live，端口18089，间隔5秒，最多失败60次。
+存活探针：HTTP /health/live，端口18089，间隔15秒，超时3秒。
+就绪探针：HTTP /health/ready，端口18089，间隔15秒，超时12秒。
+就绪检查包含数据库；存活检查不因数据库临时故障反复重启容器。
+deployment.yaml为可选模板；替换镜像地址，并按CCE实际情况配置镜像拉取凭证。
+模板仅创建ClusterIP Service，不自动申请或创建负载均衡。
+
+5. 负载均衡（由用户手动配置）
+服务目标端口18089，Service可对外使用80，由ELB选择HTTP或HTTPS监听。
+初始SESSION_COOKIE_SECURE=false支持HTTP验证，不要求登录账号。
+若最终用户仅通过HTTPS访问，将SESSION_COOKIE_SECURE=true；网关正确传递X-Forwarded-Proto=https。
+即使免登录，问答仍使用Session Cookie与CSRF，不能阻断Cookie。
+负载均衡或上层代理的连接/空闲超时建议至少200秒，禁止对SSE缓冲。
+应用自带Nginx已关闭API代理缓冲；SSE最长180秒并有心跳。
+当前会话保存在单个后端内存中；暂用单副本。扩容前需要会话粘性或共享会话方案。
+免登录访问范围由你配置的ELB入口决定。
+
+6. 上线验证
+打开/screen，应直接进入大屏，不出现登录要求。
+GET /api/v1/auth/config应返回previewEnabled=true。
+GET /api/v1/agent/status应显示两个Key已配置，但此接口不验证Key是否有效。
+系统总体问答输入：系统当前接入多少座桥梁？各地市分别多少？
+确认页面收到计划、业务证据、逐步输出正文和最终完成事件。
+应使用生产查询结果核对，不强制使用本地旧快照131/43。
+切换单桥测试病害统计，确认范围固定当前桥。
+生产网络、模型调用、数据库版本与表结构必须在CCE启动后验收。
+
+7. 常见故障
+启动失败schema不存在：先创建bridge_agent并核实权限。
+relation does not exist：确认已手动导入SQL，且APP_DB_URL的currentSchema为bridge_agent。
+问答未配置：检查DIFY_API_KEY及DIFY_CLASSIFIER_API_KEY均已注入，重建Pod生效。
+问答403：检查CSRF和Session Cookie，HTTP入口不能设置SESSION_COOKIE_SECURE=true。
+正文最后一次性出现：检查ELB/上层代理缓冲与超时。
+部署后只看到Nginx页面：核对使用的镜像标签和18089端口。
+
+8. 重建
+在开发机项目根目录执行：
+powershell -File scripts/build-cce-offline.ps1
+会运行后端测试并打包、构建前端，导出Docker格式tar和SHA256。
+生产服务器不需要安装Java、Node、Maven、pnpm或Docker Compose。
+未在Docker1.13.1或实际CCE节点验证镜像；本次按用户要求暂不处理旧Docker兼容性。

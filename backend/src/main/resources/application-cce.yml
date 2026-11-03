@@ -1,0 +1,20 @@
+# Activate together with prod: prod,cce. Single-container, anonymous CCE deployment.
+server:
+  address: 127.0.0.1
+  port: 8088
+  servlet:
+    session:
+      cookie:
+        secure: ${SESSION_COOKIE_SECURE:false}
+bridgemind:
+  preview-enabled: ${PREVIEW_ENABLED:true}
+  dify:
+    preview-access: ${DIFY_PREVIEW_ACCESS:true}
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db

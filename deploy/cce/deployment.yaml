@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bridgemind
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: bridgemind
+  template:
+    metadata:
+      labels:
+        app: bridgemind
+    spec:
+      terminationGracePeriodSeconds: 40
+      containers:
+        - name: bridgemind
+          image: REPLACE_WITH_SWR_IMAGE_ADDRESS
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 18089
+          envFrom:
+            - secretRef:
+                name: bridgemind-env
+          resources:
+            requests:
+              cpu: 500m
+              memory: 768Mi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 12
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bridgemind
+spec:
+  type: ClusterIP
+  selector:
+    app: bridgemind
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -90,6 +90,7 @@ p {
   padding: 0 22px;
   width: calc(100vw / var(--screen-scale, 1));
   min-height: 960px;
+  height: calc(100vh / var(--screen-scale, 1));
   height: calc(100dvh / var(--screen-scale, 1));
   display: flex;
   flex-direction: column;
@@ -1666,6 +1667,7 @@ body:has(.dashboard-page) {
 /* 三期业务页面使用独立工作区，完整记录和核查结果可分页追溯。 */
 .records-page,
 .quality-page {
+  height: calc(100vh / var(--screen-scale, 1));
   height: calc(100dvh / var(--screen-scale, 1));
   min-height: 720px;
   display: flex;

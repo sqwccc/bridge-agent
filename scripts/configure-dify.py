@@ -65,7 +65,7 @@ def bootstrap():
         call('/setup', {**state, 'language': 'zh-Hans'})
     state = login()
     if not state.get('app_id'):
-        app = call('/apps', {'name': 'BridgeMind 单桥档案与病害维修', 'description': '由业务后端提供只读桥梁资料；默认合成样例联调。', 'mode': 'chat', 'icon_type': 'emoji', 'icon': '🌉', 'icon_background': '#D5F5F6'})
+        app = call('/apps', {'name': 'BridgeMind 桥梁数据问答', 'description': '由业务后端提供只读桥梁资料；默认合成样例联调。', 'mode': 'chat', 'icon_type': 'emoji', 'icon': '🌉', 'icon_background': '#D5F5F6'})
         state['app_id'] = app['id']
         save(state)
     print('Local Dify admin and bridge application ready. Credentials: runtime/dify-account.json')

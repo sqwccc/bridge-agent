@@ -1,0 +1,20 @@
+这两份文件是针对 DSL 0.3.0 的迁移候选文件，尚未在目标生产环境完成导入验证。
+
+基于项目 docs 下的 0.7.0 DSL 生成，原文件未修改。
+调整：版本标记为0.3.0；移除site展示配置；清空插件版本锁定dependencies；移除模型参数thinking。
+保留：应用名称、chat类型、全部提示词、bridge_context输入定义、温度和输出上限。
+
+导入后必须操作：
+1. 在两个应用中重新选择生产环境已安装并配置凭据的模型供应商和模型。
+   文件保留原模型名称deepseek-flash和provider作为来源信息，不保证生产环境存在该模型。
+   dependencies为空不代表无需模型插件；它仅避免自动要求安装本地锁定的插件版本。
+2. 按生产模型实际支持情况检查参数。分类输出上限原为1200，回答原为3000，温度均为0.1。
+   移除thinking参数不保证思考模式关闭；请在生产模型设置中检查。
+3. 确认bridge_context输入存在且提示词完整，保存/发布应用。
+4. 分别创建应用API Key，更新Java的DIFY_API_KEY和DIFY_CLASSIFIER_API_KEY，以及DIFY_BASE_URL。
+5. 按docs/Dify生产迁移测试用例.txt验证分类JSON、业务证据和流式回答。
+
+校验范围：YAML可解析，提示词及输入定义与源文件完全一致，原0.7.0文件未改变。
+不能仅凭DSL版本号推断生产Dify的准确软件版本，模型插件兼容性需要在目标环境验证。
+参考：官方Dify 1.4.0源码声明CURRENT_DSL_VERSION=0.3.0，支持chat/model_config导入。
+https://github.com/langgenius/dify/blob/1.4.0/api/services/app_dsl_service.py

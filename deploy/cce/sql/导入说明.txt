@@ -1,0 +1,20 @@
+手动建表版部署顺序
+
+1. 在DBeaver选择3.141.179.50:5432的paishui_db，使用paishui账号连接。
+2. 确认是paishui_db后，打开01_create_bridge_agent.sql，以“执行SQL脚本”方式运行完整文件。
+   文件为UTF-8；遇到错误停止执行并ROLLBACK，保留错误原文。
+   若账号没有创建schema的权限，请DBA先建立bridge_agent并授予paishui USAGE、CREATE。
+   建议由paishui账号执行建表，以免对象所有权导致后续读写权限问题。
+3. 执行02_verify_bridge_agent.sql，确认4张表和字段；全新安装时表内应无记录。
+4. 上传手动建表版镜像bridgemind:20261028-cce-manualsql-p18089并在CCE UI替换镜像，容器端口18089，启动命令留空。
+
+本版已从后端依赖移除Flyway及此前的Vastbase兼容插件，不自动创建或修改表。
+不执行SET ROLE，不创建或校验flyway_schema_history。
+旧flyway_schema_history可保留，不需要删除。原业务数据不会被本SQL删除。
+已经存在的表由CREATE TABLE IF NOT EXISTS跳过；若结构不一致，应核对后单独编写ALTER脚本，不能认为跳过即兼容。
+账号表仍供后端账号相关组件使用，但脚本不插入账号，免登录方式保持不变。
+本脚本仅涉及应用库bridge_agent，不对qiaoliang来源库执行任何语句。
+
+应用库默认地址已修正为3.141.179.50，schema为bridge_agent，其他生产凭据仍内置镜像。
+CCE UI中已有的同名环境变量仍覆盖镜像默认值，请检查APP_DB_URL不存在旧地址。
+当前脚本与镜像会在隔离PostgreSQL15环境验证，真实Vastbase G100仍需导入后确认兼容。

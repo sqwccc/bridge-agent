@@ -1,11 +1,9 @@
 import ky, { HTTPError } from "ky";
+import { apiBaseUrl } from "./url";
 
 /** 仅 GET 有限重试；Cookie 携带 Session，业务数据从同源网关读取。 */
 const client = ky.create({
-  baseUrl: new URL(
-    import.meta.env.VITE_API_BASE_URL || "/api/v1/",
-    location.origin,
-  ),
+  baseUrl: apiBaseUrl,
   credentials: "include",
   timeout: 20000,
   retry: { limit: 1, methods: ["get"] },

@@ -1,0 +1,111 @@
+CCE p18089 单镜像打包与门户接入交接
+整理日期：2026-11-03；成功产物日期：2026-11-02。
+
+一、已交付的版本
+最新成功产物：bridgemind:20261102-cce-p18089-portal-direct
+镜像 ID：3d0260f78cbfd3872ba481ec0229341b028517c5d0d5e57229768425d3f2b8b0
+目录（相对项目根目录）：runtime/cce-release-20261102-p18089-portal-direct/
+离线包：bridgemind-20261102-cce-p18089-portal-direct-linux-amd64.tar
+大小：274635264 字节。
+归档 SHA256：2536dcd8e47d69aa8ca96b6e607e41a7cf3e08ce3abe9f402a1238bbc0b9d7e1
+目录还有 portal-nginx.conf、部署说明.txt、SHA256SUMS.txt、verification.json。
+runtime 为本地产物目录，不应假设其他机器或新 checkout 自动拥有这些文件。
+
+基础镜像：bridgemind:20261028-cce-manualsql-p18089，linux/amd64。
+本次沿用基础镜像中的 Java JAR，只更新前端静态文件、Nginx 配置和来源库默认地址。
+关键边界：修改 backend 源码后，仅运行 build-cce-portal.ps1 不会把新 Java 代码装入镜像！必须另外构建后端及基础镜像，或调整构建流程。
+
+二、端口、数据库及 CCE 配置
+单容器 Nginx 对外监听 18089，Java 在 127.0.0.1:8088；容器以 UID/GID 10001 运行。
+CCE Service targetPort 使用 18089；启动命令/参数通常留空，沿用镜像 entrypoint。
+启动 profiles 为 prod,cce。Nginx 与 Java 任一退出时容器应退出，便于 CCE 重启。
+来源桥梁数据库默认 URL 已改为：
+jdbc:postgresql://3.141.179.64:5432/qiaoliang_db?currentSchema=qiaoliang
+来源 schema 为 qiaoliang；此库与本系统应用库配置须分清。
+镜像 /app/production-defaults.env 提供默认值，CCE 已设置的环境变量优先。
+所以 CCE 如仍设置旧 SOURCE_DB_URL，必须同步更新环境变量并滚动重建实例；换镜像本身不会覆盖该环境变量。
+不在交接文档保存数据库密码。生产应用表使用手动 SQL，不依赖 Flyway 启动迁移；说明见 deploy/cce/sql/。
+
+三、访问路径与转发规则
+直接访问：http://3.141.179.12:18089/zntmh/ql/
+大屏：http://3.141.179.12:18089/zntmh/ql/screen
+门户访问：<门户协议及主机端口>/zntmh/ql/
+不要把门户菜单配置成相对路径 zntmh/ql/，否则可能落到 /pc/zntmh/ql/。
+菜单应使用 /zntmh/ql/ 或完整 URL；/pc/zntmh/ql/ 不在这次确认的配置范围。
+根路径 / 不作为本版完整前端的标准入口。
+
+门户 Nginx 配置（放在正确的 server 中）：
+location = /zntmh/ql { return 301 /zntmh/ql/; }
+location ^~ /zntmh/ql/ {
+    proxy_pass http://3.141.179.12:18089/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Connection "";
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_connect_timeout 10s;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+}
+proxy_pass 尾部的 / 将门户 /zntmh/ql/ 前缀剥掉：
+浏览器 /zntmh/ql/api/v1/auth/config -> 镜像 /api/v1/auth/config -> Java 同路径。
+镜像 deploy/cce/nginx.portal.conf 同时接受保留前缀的直接访问：
+location = /zntmh/ql { return 301 /zntmh/ql/; }
+location ^~ /zntmh/ql/ { rewrite ^/zntmh/ql/(.*)$ /$1 last; }
+absolute_redirect off 防止镜像端口/主机泄漏到重定向。
+不要给镜像 / 添加无条件跳转到 /zntmh/ql/，门户剥掉前缀后可能造成重定向循环。
+镜像 /api/ 转发 Java8088；/assets/ 文件缺失应返回404，避免 HTML 被当成 JS。
+镜像 API proxy_read_timeout 为200s，门户为300s；并非整个链路都能空闲300s。
+当前 SAMEORIGIN 限制意味着跨域 iframe 还需单独核对，同源门户转发与直接跨域 iframe 不等价。
+
+四、前端前缀与浏览器兼容改动
+构建变量：VITE_APP_BASE_PATH=/zntmh/ql/
+构建变量：VITE_API_BASE_URL=/zntmh/ql/api/v1/
+frontend/vite.config.ts 使用 base，main.tsx 的 BrowserRouter 使用 BASE_URL。
+frontend/src/api/url.ts 统一 API、下载与应用链接路径；流式请求同样使用此前缀。
+只改门户 Nginx 不够：JS/CSS、API、路由、下载链接必须使用一致的浏览器侧前缀。
+Firefox79 原报错 private fields are not currently supported，属于 JS 解析兼容问题。
+已设置 Vite build target/cssTarget 为 firefox79、chrome80，并引入 core-js/stable。
+src/compat.ts 补齐 AbortSignal.any、throwIfAborted、crypto.randomUUID；加入 vh 回退和不支持 zoom 时的处理。
+已检查产物不含私有字段语法。并未在真实 Firefox79 上完成全流程验收，不应宣称所有旧浏览器完全支持。
+
+五、可复用打包步骤
+在项目根目录执行；需要 Docker、pnpm 及本地基础镜像：
+docker image inspect bridgemind:20261028-cce-manualsql-p18089
+powershell -ExecutionPolicy Bypass -File .\scripts\build-cce-portal.ps1 -Tag <新的唯一标签>
+python .\scripts\verify-cce-portal.py bridgemind:<新的唯一标签>
+
+build-cce-portal.ps1 会 frozen-lockfile 安装前端依赖、构建、复制 dist 内容、构建 linux/amd64 镜像、docker save、计算 SHA256。
+脚本当前发布目录硬编码为 runtime/cce-release-20261102-p18089-portal-direct，换 Tag 不会更换目录；后续发布前应调整目录并保留旧版证据。
+同目录重复构建会保留历史静态资源，脚本不会清空 html。必要时使用新构建目录；不要未经路径核对执行递归删除。
+verify-cce-portal.py 的报告目录也固定，复用时注意不要误覆盖历史验收记录。
+在目标机器 docker load -i <归档路径>，推送到实际镜像仓库后更新 CCE 镜像引用；不要凭本地 tag 推断 CCE 已拉取该版本。
+本次整理没有重新打包、推送、部署或切换分支。
+
+六、已经验证与未验证的范围
+历史 verification.json 记录通过：prod,cce 启动、健康检查、SPA 刷新、直连及真实 Nginx 剥前缀代理、静态资源、API、尾斜杠跳转、CSRF、模拟 Dify SSE、服务退出联动、重启及 SIGTERM。
+相关脚本：scripts/verify-cce-image.py、verify-cce-portal.py、verify-cce-portal-browser.cjs。
+浏览器测试使用 Chromium，另模拟移除部分新 API；页面数据接口有 mock。
+集成测试使用隔离 PostgreSQL15 和 Dify stub，不等于生产数据库与真实模型验收。
+用户现场已反馈 readiness UP、auth/config 成功；最新现场日志 dashboard/options、dictionaries/bridges、dashboard 为200。
+
+七、已知故障与下一步（未解决）
+区域报警列表 GET /zntmh/ql/api/v1/alarms?size=50 返回503。
+同一时刻 ApiExceptionHandler 警告：数据库查询不可用，异常类型 BadSqlGrammarException。
+这是已到达后端的数据库查询错误，不能再简单归因于18089端口、防火墙、门户前缀或浏览器。
+当前异常处理只打印异常类型，截图未给出底层 PostgreSQL 错误，尚不能确定缺表、缺字段、类型不匹配等具体原因。
+已检查交付镜像 JAR 中 AlarmMapper.xml，与当前报警查询相符。
+重点文件：backend/src/main/resources/mapper/source/alarm/AlarmMapper.xml
+关联来源：dwd_ql_jc_jcbj_data、dwd_ql_jc_bjcz_data，以及 point_bridge/bridge_base 公共 CTE。
+下一步应获取完整 SQLException/SQLState 或让用户用应用同一数据库账号在 DBeaver 执行只读 EXPLAIN，拿到准确报错后修复。
+不要修改生产表结构试错，不要把 SQL 异常吞掉返回空列表冒充成功。
+如果修复 Mapper/后端日志，必须真正更新镜像 Java JAR，不能只用本文件第五节的前端增量打包脚本。
+
+八、继续对话前的工作区核对
+本次工作位于 codex/agent-qa-enhancement 分支，有许多未提交修改及未跟踪 deploy/scripts 文件。
+后续先 git status/branch 核对；不要切 main 后假定相同构建，也不要覆盖已有工作。
+本机曾因 Git 目录所有者差异需逐命令 -c safe.directory=D:/WorkProjects/bridge-agent；未全局修改 Git 配置。
+资料由项目根 AGENTS.md 和 README.md 索引，后续在同项目工作的对话可继续读取。

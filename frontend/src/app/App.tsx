@@ -38,7 +38,9 @@ export function App() {
         String(
           Math.max(
             1,
-            Math.min(window.innerWidth / 1920, window.innerHeight / 1080),
+            CSS.supports("zoom", "1")
+              ? Math.min(window.innerWidth / 1920, window.innerHeight / 1080)
+              : 1,
           ),
         ),
       );
