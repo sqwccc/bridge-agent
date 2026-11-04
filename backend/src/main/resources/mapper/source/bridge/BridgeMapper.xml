@@ -33,7 +33,7 @@
         DESC
         ), device_source AS (
         SELECT * FROM device_latest WHERE coalesce(sjtbzt,'')!='D'
-        ), device_bridges AS MATERIALIZED (
+        ), device_bridges AS (
         SELECT DISTINCT p.bridge_id FROM point_bridge p JOIN device_source d
         ON ARRAY[d.sscsdm,d.dwbsm]::text[]=ARRAY[p.sscsdm,p.bsm]::text[]
         ), bridge_active AS (

@@ -40,7 +40,7 @@
         <include refid="com.bridgemind.bridge.mapper.BridgeMapper.base"/>,
         quality_keys AS (SELECT sscsdm,bridge_key,min(bridge_id) AS bridge_id,count(*) AS matches FROM bridge_keys GROUP
         BY 1,2),
-        raw AS NOT MATERIALIZED (<include refid="raw"/>),
+        raw AS (<include refid="raw"/>),
         audited AS (
         SELECT r.*,CASE WHEN k.matches=1 THEN k.bridge_id END AS bridge_id,k.matches,
         concat_ws(',',

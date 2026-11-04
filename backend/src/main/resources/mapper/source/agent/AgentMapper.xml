@@ -20,7 +20,7 @@
         SELECT (SELECT count(*) FROM selected_channels) AS channel_count,
             (SELECT count(DISTINCT bridge_id) FROM selected_channels) AS configured_bridges,
             count(*) AS reading_count,count(DISTINCT bridge_id) AS bridges_with_readings,
-            count(DISTINCT (sscsdm,point_id,device_id,metric)) AS channels_with_readings,
+            (SELECT count(*) FROM (SELECT DISTINCT sscsdm,point_id,device_id,metric FROM readings) channel_keys) AS channels_with_readings,
             min(jccjsj)::text AS first_time,max(jccjsj)::text AS last_time
         FROM readings
     </select>
@@ -47,33 +47,56 @@
     </select>
     <sql id="summaryQuery">
         <include refid="com.bridgemind.work.mapper.WorkMapper.base"/>,
-        matched AS MATERIALIZED (SELECT * FROM records r <include refid="com.bridgemind.work.mapper.WorkMapper.filter"/>)
+        matched AS (SELECT * FROM records r <include refid="com.bridgemind.work.mapper.WorkMapper.filter"/>)
         <include refid="summaryRows"/>
     </sql>
     <sql id="summaryRows">
         SELECT 'total' AS dimension,'all' AS code,count(*) AS count,min(occurred_at)::text AS first_date,
             max(occurred_at)::text AS last_date,max(source_updated_at)::text AS latest_sync FROM matched
-        UNION ALL
-        SELECT d.dimension,d.code,count(*),NULL,NULL,NULL FROM matched r
-        CROSS JOIN LATERAL (VALUES
-        <trim suffixOverrides=",">
-            <if test="_parameter.containsKey('dimensions') and dimensions.contains('maintenancePriority')">('maintenancePriority',<include refid="maintenancePriority"/>),</if>
-            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('city')">('city',r.city_code),</if>
-            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('zone')">('zone',coalesce(r.zone::text,'missing')),</if>
-            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('status')">('status',coalesce(r.status::text,'missing')),</if>
-            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('severity')">('severity',coalesce(r.severity::text,'missing')),</if>
-            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('damageType')">('damageType',coalesce(r.damage_type::text,'missing')),</if>
-            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('maintenanceType')">('maintenanceType',coalesce(r.maintenance_type::text,'missing')),</if>
-            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('month')">('month',coalesce(to_char(r.occurred_at,'YYYY-MM'),'missing')),</if>
-            <if test="!_parameter.containsKey('dimensions') or dimensions.contains('resultProvided')">('resultProvided',CASE WHEN nullif(trim(r.result),'') IS NULL THEN 'no' ELSE 'yes' END),</if>
-        </trim>
-        ) d(dimension,code) GROUP BY d.dimension,d.code ORDER BY dimension,code
+        <!-- Ordinary grouped branches avoid correlated VALUES/LATERAL on Vastbase G100 V2.2. -->
+        <if test="_parameter.containsKey('dimensions') and dimensions.contains('maintenancePriority')">
+            UNION ALL
+            SELECT 'maintenancePriority', <include refid="maintenancePriority"/>,count(*),NULL,NULL,NULL FROM matched r GROUP BY <include refid="maintenancePriority"/>
+        </if>
+        <if test="!_parameter.containsKey('dimensions') or dimensions.contains('city')">
+            UNION ALL
+            SELECT 'city', r.city_code,count(*),NULL,NULL,NULL FROM matched r GROUP BY r.city_code
+        </if>
+        <if test="!_parameter.containsKey('dimensions') or dimensions.contains('zone')">
+            UNION ALL
+            SELECT 'zone', coalesce(r.zone::text,'missing'),count(*),NULL,NULL,NULL FROM matched r GROUP BY coalesce(r.zone::text,'missing')
+        </if>
+        <if test="!_parameter.containsKey('dimensions') or dimensions.contains('status')">
+            UNION ALL
+            SELECT 'status', coalesce(r.status::text,'missing'),count(*),NULL,NULL,NULL FROM matched r GROUP BY coalesce(r.status::text,'missing')
+        </if>
+        <if test="!_parameter.containsKey('dimensions') or dimensions.contains('severity')">
+            UNION ALL
+            SELECT 'severity', coalesce(r.severity::text,'missing'),count(*),NULL,NULL,NULL FROM matched r GROUP BY coalesce(r.severity::text,'missing')
+        </if>
+        <if test="!_parameter.containsKey('dimensions') or dimensions.contains('damageType')">
+            UNION ALL
+            SELECT 'damageType', coalesce(r.damage_type::text,'missing'),count(*),NULL,NULL,NULL FROM matched r GROUP BY coalesce(r.damage_type::text,'missing')
+        </if>
+        <if test="!_parameter.containsKey('dimensions') or dimensions.contains('maintenanceType')">
+            UNION ALL
+            SELECT 'maintenanceType', coalesce(r.maintenance_type::text,'missing'),count(*),NULL,NULL,NULL FROM matched r GROUP BY coalesce(r.maintenance_type::text,'missing')
+        </if>
+        <if test="!_parameter.containsKey('dimensions') or dimensions.contains('month')">
+            UNION ALL
+            SELECT 'month', coalesce(to_char(r.occurred_at,'YYYY-MM'),'missing'),count(*),NULL,NULL,NULL FROM matched r GROUP BY coalesce(to_char(r.occurred_at,'YYYY-MM'),'missing')
+        </if>
+        <if test="!_parameter.containsKey('dimensions') or dimensions.contains('resultProvided')">
+            UNION ALL
+            SELECT 'resultProvided', CASE WHEN nullif(trim(r.result),'') IS NULL THEN 'no' ELSE 'yes' END,count(*),NULL,NULL,NULL FROM matched r GROUP BY CASE WHEN nullif(trim(r.result),'') IS NULL THEN 'no' ELSE 'yes' END
+        </if>
+        ORDER BY dimension,code
     </sql>
     <select id="summary" resultType="map" timeout="30"><include refid="summaryQuery"/></select>
-    <!-- One latest-version/ownership scan per business. Aggregates and samples share matched. -->
+    <!-- Aggregates and samples share matched; CTE materialization is left to the database planner. -->
     <select id="focusSnapshot" resultType="map" timeout="30">
         <include refid="com.bridgemind.work.mapper.WorkMapper.base"/>,
-        matched AS MATERIALIZED (SELECT * FROM records r <include refid="com.bridgemind.work.mapper.WorkMapper.filter"/>),
+        matched AS (SELECT * FROM records r <include refid="com.bridgemind.work.mapper.WorkMapper.filter"/>),
         summary_rows AS (<include refid="summaryRows"/>),
         example_rows AS (SELECT * FROM matched r ORDER BY r.occurred_at DESC NULLS LAST,r.id LIMIT 3),
         candidate_rows AS (

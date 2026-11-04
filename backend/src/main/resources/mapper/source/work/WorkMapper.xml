@@ -31,20 +31,20 @@
             <otherwise>bridge_id=#{bridgeId}</otherwise>
         </choose>
         AND EXISTS(SELECT 1 FROM bridge_active b WHERE b.qlid=unique_keys.bridge_id)
-        ), candidate_keys AS MATERIALIZED (
+        ), candidate_keys AS (
         SELECT DISTINCT r.sscsdm,r.bsm FROM
         <include refid="com.bridgemind.work.mapper.WorkMapper.table"/>
         r JOIN target_keys k
         ON ARRAY[k.sscsdm,k.bridge_key]::text[]=ARRAY[r.sscsdm,r.<include refid="com.bridgemind.work.mapper.WorkMapper.bridgeColumn"/>]::text[]
         WHERE nullif(trim(r.bsm),'') IS NOT NULL
         <if test="_parameter.containsKey('recordId')">AND r.bsm=#{recordId}</if>
-        ), candidate_versions AS MATERIALIZED (
+        ), candidate_versions AS (
         SELECT r.* FROM
         <include refid="com.bridgemind.work.mapper.WorkMapper.table"/>
         r JOIN candidate_keys c
         ON c.sscsdm=r.sscsdm AND c.bsm=r.bsm
         <if test="_parameter.containsKey('recordId')">WHERE r.bsm=#{recordId}</if>
-        ), source_latest AS MATERIALIZED (
+        ), source_latest AS (
         SELECT DISTINCT ON(r.sscsdm,r.bsm) r.* FROM candidate_versions r
         ORDER BY r.sscsdm,r.bsm,r.tbsj DESC NULLS LAST,(r.sjtbzt='D') DESC NULLS LAST,
         <if test="kind != 'patrols'">r.extract_time DESC NULLS LAST,</if>to_jsonb(r)::text DESC
