@@ -109,3 +109,46 @@ verify-cce-portal.py 的报告目录也固定，复用时注意不要误覆盖�
 后续先 git status/branch 核对；不要切 main 后假定相同构建，也不要覆盖已有工作。
 本机曾因 Git 目录所有者差异需逐命令 -c safe.directory=D:/WorkProjects/bridge-agent；未全局修改 Git 配置。
 资料由项目根 AGENTS.md 和 README.md 索引，后续在同项目工作的对话可继续读取。
+
+九、2026-11-03 本地取消登录改动（尚未部署）
+用户要求暂时彻底去掉登录。当前 codex/agent-qa-enhancement 工作区已移除前端登录页、门禁、退出按钮与 401 自动跳转；/login 兼容跳转到大屏。
+后端 SecurityConfig 统一允许匿名请求，旧 PREVIEW_ENABLED/DIFY_PREVIEW_ACCESS 开关不再决定登录访问。AuthController 仅保留 config 和 csrf，移除 login/me/logout。CSRF 校验仍保留，问答和保存不要求账号。
+前端 15 项单元测试及构建通过；后端 NoLoginSecurityTest 两项通过（匿名读取、ERROR 转发、CSRF 获取及匿名写入）；浏览器端全业务 E2E 未运行。
+取消登录代码已提交开发分支（8d2912a），并按用户要求单独同步本地 main；未推送远端。main 未合入开发分支的其他功能与 CCE 打包改动。main 前端 7 项测试、构建和后端两项鉴权回归通过。
+本次没有生成发布镜像或部署生产。上线必须重新构建后端 JAR 并装入镜像，不能仅用旧前端增量打包流程。
+截图中的报警 SOURCE_UNAVAILABLE / 已知 BadSqlGrammarException 仍未修复，取消登录不代表来源数据库查询成功。
+
+十、2026-11-03 新生产离线包（构建验证完成，未部署）
+最新构建：bridgemind:20261103-cce-p18089-nologin-difylog。
+目录：runtime/cce-release-20261103-cce-p18089-nologin-difylog/。
+镜像 ID：b8ec95d7a903d92c56d48ea7f38fd0dacaf31adefdfa102a49a478b25ade796a。
+归档大小：308491264 字节；SHA256：4519e7e90e2e037d7f81954a7c746e435b5880c1909bce1fd760b5c361c007da。
+源码：codex/agent-qa-enhancement，be6f02cad71e2e877c99a64c55f6361ca9bd24e9。打包及验证脚本本次另有工作区修改。
+新 JAR SHA256：625505f06fe6c946fbf97445ad524484ff7a95d3ec9039db23b85301576e3371，与镜像内 /app/application.jar 一致。
+新包包含取消登录及 Dify 诊断日志，保留 p18089、门户前缀和旧浏览器兼容配置。基础层沿用既有生产默认配置；本次明确替换了 JAR，非仅前端更新。
+后端 Maven package：86项，68通过，18依赖外部环境跳过。镜像回载、隔离库启动、匿名访问、前缀直连及代理、浏览器刷新/兼容补丁、CSRF、模拟Dify SSE、注入401诊断日志、退出联动和重启均通过。
+验证细节见新目录 verification.json 与 build-manifest.json。不代表生产业务全通过，报警 SQL 异常及真实 Dify 故障仍未确认修复。
+脚本 build-cce-portal.ps1 现按 Tag 新建目录，默认重建后端；仅在已构建并验证后端时传 -UseBuiltBackend。验证脚本使用 CCE_VERIFICATION_DIR 指定新报告目录，避免覆盖历史证据。
+
+十一、2026-11-04 Kafka探测、批量接入与监测报告离线包（未部署）
+镜像：bridgemind:20261104-cce-p18089-kafka-probe-report，linux/amd64。
+目录：runtime/cce-release-20261104-cce-p18089-kafka-probe-report/。
+镜像ID：sha256:2c338a26904dc43bd8c453ff65e918445a042ee815315f4aeb443e19c5baa33b。
+当前分支 codex/agent-qa-enhancement，HEAD 1dfbc07，包含本次尚未提交的Kafka/报告代码，未同步main。
+本次重新构建后端与带/zntmh/ql/前缀的前端，镜像内JAR SHA256与构建产物一致。
+离线包回载、隔离数据库启动、前缀代理/直连、浏览器刷新/兼容补丁、CSRF、模拟Dify SSE、退出/重启检查通过。
+新增sql/003-monitor-kafka.sql仅在APP_DB排水应用库执行，创建3张表及索引；004_verify_monitor_kafka.sql为只读核验。
+两份SQL在隔离PostgreSQL15执行通过，DDL重复执行通过，不等于目标Vastbase/排水库验收。
+探测模式配置见交付probe.env.example，开启后默认最多3条完整消息日志、不入库、不提交位点；镜像默认仍关闭Kafka。
+真实认证材料需挂载；本机TUN端口握手不代表真实Kafka内网可达，本次没有生产Kafka试读或部署。
+报警LATERAL代码修复已在6ae33ef包含，本记录不认定生产验收完成。新报告按实际入库数据统计，未评分部分明确标注。
+完整镜像、SQL、配置与哈希见build-manifest.json、SHA256SUMS.txt及部署说明.txt。
+本包归档大小：329229824 字节；SHA256：8965e9ab8e8b1e571005bb13136fcda638576749311430b25ada8dfc5418c078。
+
+十二、2026-11-04 问答取数详细诊断版（未部署）
+镜像：bridgemind:20261104-cce-p18089-qa-querylog。
+目录：runtime/cce-release-20261104-cce-p18089-qa-querylog/。
+针对整体数据情况在evidence阶段QueryTimeoutException增加请求关联、Mapper/数据源/耗时/SQLState异常链和并发排队日志；未修改SQL或放宽超时，根因仍需现场复现定位。
+后端112项88通过24跳过，补充诊断2项通过；隔离库与模拟Dify镜像验证通过，不代表生产验收。
+JAR已重新构建并核对镜像内哈希，保留工作区Kafka/报告改动，未同步main。无新增SQL，沿用003/004。部署和日志抓取见包内问答诊断说明.txt。
+归档SHA256：26756d2c1ca06f42cfc60e8c1415a78005cfe07279d13588c2729a367b80198d。

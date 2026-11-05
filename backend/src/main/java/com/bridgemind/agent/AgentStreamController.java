@@ -89,7 +89,7 @@ public class AgentStreamController {
         if(!capacity.tryAcquire()){conversation.busy.set(false);throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"当前问答繁忙，请稍后重试");}
         response.setHeader("Cache-Control","no-cache, no-transform");response.setHeader("X-Accel-Buffering","no");
         response.setCharacterEncoding(java.nio.charset.StandardCharsets.UTF_8.name());
-        var emitter=new SseEmitter(180000L);
+        var emitter=new SseEmitter(480000L);
         var active=new AtomicReference<InputStream>();var stopped=new AtomicBoolean();var task=new AtomicReference<Thread>();
         Runnable cancel=()->{stopped.set(true);var input=active.getAndSet(null);try{if(input!=null)input.close();}catch(Exception ignored){}
             var t=task.get();if(t!=null&&t!=Thread.currentThread())t.interrupt();};
@@ -98,6 +98,7 @@ public class AgentStreamController {
             ScheduledFuture<?> pulse=null;
             long started=System.nanoTime();
             String stage="classification";
+            org.slf4j.MDC.put("agentRequestId",conversation.id);org.slf4j.MDC.put("agentStage",stage);
             try{
                 send(emitter,"meta",Map.of("conversationId",conversation.id,"dataMode",demo?"demo":"source"));
                 pulse=heartbeat.scheduleAtFixedRate(()->{try{send(emitter,"ping",Map.of());}catch(Exception e){cancel.run();}},10,10,TimeUnit.SECONDS);
@@ -125,7 +126,12 @@ public class AgentStreamController {
                 boolean follow=enhanced&&AgentRules.explanation(body.question())&&previous!=null;
                 boolean rule=enhanced&&("rule".equals(body.answerMode())||!dify.configured());
                 AgentPlan plan;
-                if(follow)plan=previous;
+                boolean overviewShortcut=enhanced && body.question().strip().matches("(?:整体数据情况|总体数据情况|整体数据概况|数据总体情况|数据概览|数据整体情况)[？?。！!]*");
+                if(overviewShortcut){
+                    rule=true;plan=AgentRules.classify(body.question(),body.scope(),previous);
+                    LOG.info("agent shortcut requestId={} topic=data_overview classifierSkipped=true answer=compact_rule",conversation.id);
+                }
+                else if(follow)plan=previous;
                 else if(rule||enhanced&&!classifier.configured()){
                     rule=true;plan=AgentRules.classify(body.question(),body.scope(),previous);
                 }else try{
@@ -137,7 +143,7 @@ public class AgentStreamController {
                     rule=true;plan=AgentRules.classify(body.question(),body.scope(),previous);
                 }
                 if(stopped.get())return;
-                stage="planning";
+                stage="planning";org.slf4j.MDC.put("agentStage",stage);
                 plan=effectivePlan(plan,body);
                 if(!enhanced&&plan.monitoring()!=null)plan=AgentRules.clarify("监测分析增强功能尚未启用。");
                 send(emitter,"plan",plan);
@@ -158,7 +164,8 @@ public class AgentStreamController {
                     if(plan.route().equals("domain_knowledge"))context=Map.of("知识范围","BCI为完好状况评价，BSI为结构状况评价，当前来源为独立等级不是数值分数。Ⅰ类养护用合格/不合格，Ⅱ～Ⅴ类用A～E，类别冲突、缺失、未知编码需单列。设备存在不等于在线，历史报警不等于当前异常。仅解释这些知识与业务字典，其他知识明确资料未提供。",
                             "字典",com.bridgemind.work.service.WorkDictionary.all());
                     else{
-                        stage="evidence";
+                        stage="evidence";org.slf4j.MDC.put("agentStage",stage);
+                        LOG.info("agent evidence start requestId={} topic={} scope={} reused={}",conversation.id,plan.topic(),body.bridgeId()==null?"network":"bridge",follow&&conversation.lastEvidence!=null);
                         send(emitter,"status",Map.of("message","正在查询桥梁资料…"));
                         long queryStarted=System.nanoTime();
                         pack=follow&&conversation.lastEvidence!=null?conversation.lastEvidence:evidence.build(plan,body.bridgeId(),demo);
@@ -171,7 +178,7 @@ public class AgentStreamController {
                         }
                         LOG.info("agent evidence durationMs={}",TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-queryStarted));
                     }
-                    stage="generation";
+                    stage="generation";org.slf4j.MDC.put("agentStage",stage);
                     send(emitter,"status",Map.of("message","正在生成回答…"));
                     String fallback=pack==null?"**结论**：BCI为完好状况评价，BSI为结构状况评价；Ⅰ类合格/不合格与Ⅱ～Ⅴ类A～E分别解释。等级不能折算健康分，设备存在不等于在线。":
                             AgentPresentation.answer(pack,body.question(),chart,json);
@@ -197,7 +204,7 @@ public class AgentStreamController {
                     if(rule){
                         if(stopped.get()||Thread.currentThread().isInterrupted())return;
                         answer.setLength(0);answer.append(fallback);
-                        send(emitter,"source",Map.of("engine","rule","message","规则回答（使用本轮查询与计算；自动模式下模型不可用时降级）"));
+                        send(emitter,"source",Map.of("engine","rule","message",overviewShortcut?"简版概览（本轮数据库统计，固定格式回答）":"规则回答（使用本轮查询与计算；自动模式下模型不可用时降级）"));
                         send(emitter,"replace",Map.of("text",fallback));
                     }
                 }
@@ -220,7 +227,7 @@ public class AgentStreamController {
                     };
                     try{send(emitter,"error",Map.of("message",message,"stage",stage,"requestId",conversation.id));}catch(Exception ignored){}
                 }
-            }finally{LOG.info("agent request requestId={} durationMs={}",conversation.id,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started));if(pulse!=null)pulse.cancel(false);cancel.run();conversation.busy.set(false);capacity.release();emitter.complete();}
+            }finally{LOG.info("agent request requestId={} durationMs={}",conversation.id,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-started));if(pulse!=null)pulse.cancel(false);cancel.run();conversation.busy.set(false);capacity.release();emitter.complete();org.slf4j.MDC.clear();}
         });
         task.set(worker);worker.start();return emitter;
     }
@@ -243,6 +250,6 @@ public class AgentStreamController {
     private void logFailure(String requestId,String stage,Exception error){
         // Do not log exception messages/bodies: upstream errors may contain credentials or queries.
         String status=error instanceof ResponseStatusException response?String.valueOf(response.getStatusCode().value()):"none";
-        LOG.warn("agent failure requestId={} stage={} type={} status={}",requestId,stage,error.getClass().getSimpleName(),status);
+        LOG.warn("agent failure requestId={} stage={} type={} status={} causes={}",requestId,stage,error.getClass().getSimpleName(),status,com.bridgemind.diagnostics.QueryTrace.failure(error));
     }
 }

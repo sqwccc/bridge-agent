@@ -1,11 +1,41 @@
 import { useState, useEffect, useRef } from "react";
-import { Modal, Select } from "antd";
+import { Modal, Select, Popover } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { apiUrl } from "../../api/url";
 import type { Report } from "../../api/types";
 import { time } from "../../api/types";
 import { Empty, ErrorState, Panel } from "../shared/ui";
+
+const reportSources: Record<string, { name: string; description: string }> = {
+  BASE_INSPECTION: {
+    name: "桥梁档案中的检测报告",
+    description:
+      "桥梁基本档案登记的报告或报告提供情况；登记记录不一定附有可打开的文件。",
+  },
+  PERIODIC_INSPECTION: {
+    name: "定期检测记录及报告",
+    description: "从本桥定期检测业务记录中关联的报告附件。",
+  },
+  REGULAR_INSPECTION: {
+    name: "常规定期检测报告",
+    description: "从本桥常规定期检测记录及其附件中关联的报告。",
+  },
+  BRIDGE_ATTACHMENT: {
+    name: "桥梁图片及其他附件",
+    description: "桥梁档案中登记的图片和其他文件，不一定是检测报告。",
+  },
+  TASK_ATTACHMENT: {
+    name: "检测任务共享附件",
+    description: "整个检测任务的共享附件，可能涉及多座桥梁。",
+  },
+  TASK_FILE: {
+    name: "检测任务共享文件",
+    description: "整个检测任务登记的共享文件，可能涉及多座桥梁。",
+  },
+};
+const sourceName = (r: Report) =>
+  reportSources[r.source]?.name || r.sourceLabel;
 
 const statusText: Record<string, string> = {
   MISSING_ATTACHMENT: "附件缺失",
@@ -130,7 +160,7 @@ export function ReportPanel({ bridgeId }: { bridgeId: string }) {
       ) : reports.isPending ? (
         <Empty>正在读取报告…</Empty>
       ) : !reports.data?.length ? (
-        <Empty>暂无可确认归属的报告。监测分析报告数据待提供。</Empty>
+        <Empty>暂无可确认归属的来源报告附件。</Empty>
       ) : (
         <>
           <div className="report-toolbar">
@@ -140,14 +170,42 @@ export function ReportPanel({ bridgeId }: { bridgeId: string }) {
               value={source}
               onChange={setSource}
               options={[
-                { value: "", label: "全部来源" },
+                { value: "", label: "全部报告与附件" },
                 ...Array.from(
                   new Map(
-                    reports.data.map((r) => [r.source, r.sourceLabel]),
+                    reports.data.map((r) => [r.source, sourceName(r)]),
                   ).entries(),
                 ).map(([value, label]) => ({ value, label })),
               ]}
             />
+            <Popover
+              trigger="click"
+              placement="topRight"
+              title="这些报告有什么区别？"
+              content={
+                <div className="report-source-help">
+                  <p>
+                    这里按报告登记位置分类，并不是三个不同的数据库，也不代表三份独立检测结论。
+                  </p>
+                  {Array.from(new Set(reports.data.map((r) => r.source))).map(
+                    (key) => (
+                      <p key={key}>
+                        <strong>{reportSources[key]?.name || key}：</strong>
+                        {reportSources[key]?.description || "来源尚未明确。"}
+                      </p>
+                    ),
+                  )}
+                </div>
+              }
+            >
+              <button
+                type="button"
+                className="report-source-help-button"
+                aria-label="这些报告有什么区别？"
+              >
+                ?
+              </button>
+            </Popover>
           </div>
           <div className="report-list table-scroll">
             <table className="data-table report-table">
@@ -164,7 +222,7 @@ export function ReportPanel({ bridgeId }: { bridgeId: string }) {
                   .map((r) => (
                     <tr className="report-row" key={r.id}>
                       <td>{r.inspectionDate?.slice(0, 4) || "—"}</td>
-                      <td>{r.inspectionTypeName || r.sourceLabel}</td>
+                      <td>{r.inspectionTypeName || sourceName(r)}</td>
                       <td>
                         <button
                           className="report-name-link"
@@ -213,7 +271,7 @@ export function ReportPanel({ bridgeId }: { bridgeId: string }) {
                 <span>
                   {r.name}
                   <small>
-                    {time(r.inspectionDate)} · {r.sourceLabel}
+                    {time(r.inspectionDate)} · {sourceName(r)}
                   </small>
                 </span>
                 <span>{selected?.id === r.id ? "已展开 ▴" : "展开 ▾"}</span>
@@ -259,7 +317,7 @@ export function ReportPanel({ bridgeId }: { bridgeId: string }) {
                             ? "按条件允许为空"
                             : statusText[r.status],
                         ],
-                        ["数据来源", r.sourceLabel],
+                        ["数据来源", sourceName(r)],
                         ["检测日期", time(r.inspectionDate)],
                       ].map(([label, value]) => (
                         <div key={label}>

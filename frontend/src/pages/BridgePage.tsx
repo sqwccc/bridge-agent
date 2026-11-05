@@ -1,3 +1,4 @@
+import { MonitoringReportEntry } from "../features/report/GeneratedMonitoringReport";
 import { Link, useParams, useSearchParams } from "react-router";
 import { Drawer } from "antd";
 import { useQuery } from "@tanstack/react-query";
@@ -77,14 +78,17 @@ export function BridgePage() {
                   onArchive={() => setProfileTab("overview")}
                 />
                 <BridgeVisual key={id} bridge={b} />
-                {id === "10905200071" && (
-                  <Link
-                    className="record-entry"
-                    to="/bridges/10905200071/analysis"
-                  >
-                    数据分析 →
-                  </Link>
-                )}
+                <div className="bridge-report-actions">
+                  {id === "10905200071" && (
+                    <Link
+                      className="record-entry"
+                      to="/bridges/10905200071/analysis"
+                    >
+                      数据分析 →
+                    </Link>
+                  )}
+                  <MonitoringReportEntry key={id} bridgeId={id} />
+                </div>
               </div>
               <BridgeHealth
                 bridge={b}

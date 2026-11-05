@@ -35,6 +35,12 @@ class DifyStub(http.server.BaseHTTPRequestHandler):
         calls.append((self.headers.get('Authorization'), body['response_mode']))
         assert self.path == '/v1/chat-messages'
         assert 'bridge_context' in body['inputs']
+        if body['query'] == 'diagnostic-failure':
+            self.send_response(401)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"message":"private-diagnostic-response"}')
+            return
         self.send_response(200)
         if body['response_mode'] == 'blocking':
             self.send_header('Content-Type', 'application/json')
@@ -170,6 +176,15 @@ try:
     assert len([e for e, _ in business if e == 'delta']) >= 2
     assert calls[-2:] == [('Bearer smoke-classifier', 'blocking'), ('Bearer smoke-answer', 'streaming')]
     evidence['api'] = 'CSRF enforced; distinct classifier/answer keys; demo evidence; SSE chunks and done'
+    diagnostic = ask({'question': 'diagnostic-failure', 'scope': 'network', 'pageFilters': {}})
+    diagnostic_id = next(data['conversationId'] for event, data in diagnostic if event == 'meta')
+    logs = docker('logs', app)  # Docker may write application stdout only; no secret env output.
+    assert 'upstreamStatus=401' in logs
+    assert 'stage=classification-fallback' in logs
+    assert diagnostic_id in logs
+    assert 'private-diagnostic-response' not in logs
+    assert 'smoke-classifier' not in logs and 'smoke-answer' not in logs
+    evidence['diagnostics'] = 'Injected classifier 401: upstream status, fallback stage and correlation logged; keys/body absent'
     # Simulate a failed web server: the supervisor must also stop Java and exit nonzero.
     docker('exec', app, 'sh', '-c', 'kill -TERM $(cat /tmp/nginx.pid)')
     for _ in range(30):

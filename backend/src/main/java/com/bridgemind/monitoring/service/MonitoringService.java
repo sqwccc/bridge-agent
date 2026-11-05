@@ -17,19 +17,21 @@ import org.springframework.stereotype.Service;
 @Service
 public class MonitoringService {
     private final MonitoringMapper mapper;
+    private final com.bridgemind.ingest.MonitorReadings readings;
     private final BridgeService bridges;
     record Scope(String bridgeId, String cityCode) {}
     private final Cache<Scope, List<MonitorPointResponse>> pointSnapshots;
 
     @org.springframework.beans.factory.annotation.Autowired
-    public MonitoringService(MonitoringMapper mapper, BridgeService bridges) {
-        this(mapper, bridges, Caffeine.newBuilder().maximumSize(256)
+    public MonitoringService(MonitoringMapper mapper, BridgeService bridges, com.bridgemind.ingest.MonitorReadings readings) {
+        this(mapper, bridges, readings, Caffeine.newBuilder().maximumSize(256)
                 .expireAfterWrite(Duration.ofSeconds(30)).build());
     }
 
-    MonitoringService(MonitoringMapper mapper, BridgeService bridges,
+    MonitoringService(MonitoringMapper mapper, BridgeService bridges, com.bridgemind.ingest.MonitorReadings readings,
                       Cache<Scope, List<MonitorPointResponse>> pointSnapshots) {
         this.mapper = mapper;
+        this.readings = readings;
         this.bridges = bridges;
         this.pointSnapshots = pointSnapshots;
     }
@@ -52,7 +54,7 @@ public class MonitoringService {
     public List<LatestSampleResponse> latest(String id) {
         var scope=scope(id);
         var available=points(scope);
-        return available.isEmpty()?List.of():mapper.latestForPoints(scope.cityCode(),available);
+        return available.isEmpty()?List.of():readings.latest(scope.cityCode(),available);
     }
 
     public List<ThresholdResponse> thresholds(String id, String point, String device, String metric) {
@@ -76,7 +78,7 @@ public class MonitoringService {
         var scope = scope(id);
         if (points(scope).stream().noneMatch(p -> p.pointId().equals(point) && p.deviceId().equals(device) && Objects.equals(p.metric(), metric)))
             throw new IllegalArgumentException("设备不属于本桥或指标不匹配");
-        var rows = mapper.samplesForPoint(scope.cityCode(), point, device, metric, from, to);
+        var rows = readings.samples(scope.cityCode(), point, device, metric, from, to);
         var samples = rows.stream().limit(2000).map(s -> new SampleResponse(s.time(), s.rawValue(), numericValue(s.rawValue()))).toList();
         return Map.of("items", samples, "truncated", rows.size() > 2000, "timezone", "Asia/Shanghai");
     }

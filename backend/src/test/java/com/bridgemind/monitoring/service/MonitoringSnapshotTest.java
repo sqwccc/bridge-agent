@@ -17,15 +17,16 @@ class MonitoringSnapshotTest {
     @Test void latestDatesUseOnlyValidatedCityAndChannelsAndSkipEmptyScope() {
         var service=service();
         var latest=List.of(new LatestSampleResponse("P","D","QL0301",LocalDateTime.of(2026,10,22,23,59)));
-        when(mapper.latestForPoints(anyString(),anyList())).thenReturn(latest);
+        when(readings.latest(anyString(),anyList())).thenReturn(latest);
         assertEquals(latest,service.latest("A"));
-        verify(mapper).latestForPoints("321000",service.points("A"));
+        verify(readings).latest("321000",service.points("A"));
         when(bridges.require("hidden")).thenThrow(new IllegalArgumentException("not visible"));
         assertThrows(IllegalArgumentException.class,()->service.latest("hidden"));
         ticks.set(Duration.ofSeconds(31).toNanos());when(mapper.points("A")).thenReturn(List.of());
         assertTrue(service.latest("A").isEmpty());
-        verify(mapper,times(1)).latestForPoints(anyString(),anyList());
+        verify(readings,times(1)).latest(anyString(),anyList());
     }
+    final com.bridgemind.ingest.MonitorReadings readings = mock(com.bridgemind.ingest.MonitorReadings.class);
     final MonitoringMapper mapper = mock(MonitoringMapper.class);
     final BridgeService bridges = mock(BridgeService.class);
     final AtomicLong ticks = new AtomicLong();
@@ -37,8 +38,8 @@ class MonitoringSnapshotTest {
         when(bridge.cityCode()).thenReturn("321000");
         when(bridges.require("A")).thenReturn(bridge);
         when(mapper.points("A")).thenReturn(List.of(point));
-        when(mapper.samplesForPoint(any(),any(),any(),any(),any(),any())).thenReturn(List.of());
-        return new MonitoringService(mapper, bridges, Caffeine.newBuilder().maximumSize(256)
+        when(readings.samples(any(),any(),any(),any(),any(),any())).thenReturn(List.of());
+        return new MonitoringService(mapper, bridges, readings, Caffeine.newBuilder().maximumSize(256)
                 .ticker(ticks::get).expireAfterWrite(Duration.ofSeconds(30)).build());
     }
 
@@ -48,12 +49,12 @@ class MonitoringSnapshotTest {
         service.samples("A","P","D","QL0301",from,to);
         service.samples("A","P","D","QL0301",from,to);
         verify(mapper,times(1)).points("A");
-        verify(mapper,times(2)).samplesForPoint("321000","P","D","QL0301",from,to);
+        verify(readings,times(2)).samples("321000","P","D","QL0301",from,to);
         when(mapper.points("A")).thenReturn(List.of());
         ticks.set(Duration.ofSeconds(31).toNanos());
         assertThrows(IllegalArgumentException.class, () -> service.samples("A","P","D","QL0301",from,to));
         verify(mapper,times(2)).points("A");
-        verify(mapper,times(2)).samplesForPoint(any(),any(),any(),any(),any(),any());
+        verify(readings,times(2)).samples(any(),any(),any(),any(),any(),any());
     }
 
     @Test void rejectsForeignBridgeWrongPointDeviceMetricAndInvalidRangeBeforeReadingSamples() {
@@ -65,7 +66,7 @@ class MonitoringSnapshotTest {
         when(mapper.points("B")).thenReturn(List.of());
         assertThrows(IllegalArgumentException.class, () -> service.samples("B","P","D","QL0301",from,to));
         assertThrows(IllegalArgumentException.class, () -> service.samples("A","P","D","QL0301",from,from.plusDays(32)));
-        verify(mapper,never()).samplesForPoint(any(),any(),any(),any(),any(),any());
+        verify(readings,never()).samples(any(),any(),any(),any(),any(),any());
     }
 
     @Test void bridgeVisibilityIsCheckedEvenWithWarmPointsAndCityChangeReloads() {
@@ -76,7 +77,7 @@ class MonitoringSnapshotTest {
         when(bridges.require("A")).thenReturn(moved);
         service.samples("A","P","D","QL0301",from,to);
         verify(mapper,times(2)).points("A");
-        verify(mapper).samplesForPoint("320100","P","D","QL0301",from,to);
+        verify(readings).samples("320100","P","D","QL0301",from,to);
         when(bridges.require("A")).thenThrow(new IllegalArgumentException("hidden"));
         assertThrows(IllegalArgumentException.class, () -> service.points("A"));
     }
@@ -121,7 +122,7 @@ class MonitoringSnapshotTest {
         var rows = new ArrayList<SampleResponse>();
         rows.add(new SampleResponse(from,"NaN",null));
         for(int i=1;i<2001;i++) rows.add(new SampleResponse(from.plusSeconds(i),"0",null));
-        when(mapper.samplesForPoint(any(),any(),any(),any(),any(),any())).thenReturn(rows);
+        when(readings.samples(any(),any(),any(),any(),any(),any())).thenReturn(rows);
         var result=service.samples("A","P","D","QL0301",from,to);
         var items=(List<?>)result.get("items");
         assertEquals(2000,items.size());

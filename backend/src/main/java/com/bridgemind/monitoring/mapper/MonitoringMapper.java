@@ -10,6 +10,8 @@ import com.bridgemind.monitoring.model.resp.*;
  * 通过唯一设施编号关系查询监测数据，不进行名称匹配。
  */
 public interface MonitoringMapper {
+    List<java.util.Map<String,String>> resolveChannel(@Param("point") String point,@Param("device") String device,@Param("metric") String metric);
+    List<java.util.Map<String,String>> channels(@Param("ids") List<String> ids);
     List<LatestSampleResponse> latestForPoints(@Param("city") String city, @Param("points") List<MonitorPointResponse> points);
     List<MonitorPointResponse> points(@Param("id") String id);
 

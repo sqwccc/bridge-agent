@@ -78,4 +78,18 @@
         WHERE coalesce(t.sjtbzt,'')!='D'
         ORDER BY p.point_id,p.device_id,t.jczb,t.jcjb,t.yzxx,t.yzsx,t.bsm
     </select>
+    <select id="resolveChannel" resultType="map">
+        <include refid="pointBridge"/>
+        SELECT DISTINCT p.sscsdm AS city,p.bridge_id AS bridge
+        FROM point_bridge p JOIN device_source d ON d.dwbsm=p.bsm AND d.sscsdm=p.sscsdm
+        WHERE p.bsm=#{point} AND d.bsm=#{device} AND d.jczb=#{metric}
+    </select>
+    <select id="channels" resultType="map">
+        <include refid="pointBridge"/>
+        SELECT DISTINCT p.sscsdm AS city,p.bridge_id AS bridge,p.bsm AS point,d.bsm AS device,d.jczb AS metric
+        FROM point_bridge p JOIN device_source d ON d.dwbsm=p.bsm AND d.sscsdm=p.sscsdm
+        WHERE <choose><when test="ids != null and !ids.isEmpty()">p.bridge_id IN
+        <foreach collection="ids" item="id" open="(" close=")" separator=",">#{id}</foreach>
+        </when><otherwise>FALSE</otherwise></choose>
+    </select>
 </mapper>

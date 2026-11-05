@@ -1,0 +1,27 @@
+import { test, expect } from "@playwright/test";
+test("monitoring report preview and print layout", async ({ page }) => {
+  page.on("pageerror", e => { throw e; });
+  const channels = Array.from({length: 24}, (_, i) => ({ point: { pointId: `P${i}`, pointName: `主梁第${i+1}测点`, deviceId: `WFDQ-DIS-G${i}-001`, metric: "QL0101", metricName: "位移", unit: "mm" }, samples: 5001, validSamples: 5001, minimum: -1.25, maximum: 2.5, average: 0.25, firstTime: "2026-11-04T00:00:00", lastTime: "2026-11-04T23:59:00", thresholds: [] }));
+  await page.route("**/api/v1/bridges/test/monitoring-report?**", r => r.fulfill({ json: {code:"OK", data:{ id:"JC-preview-20261104",generatedAt:"2026-11-04T12:00:00",timezone:"Asia/Shanghai",from:"2026-11-04",to:"2026-11-04",bridge:{name:"万福大桥",code:"10905200071",city:"扬州",road:"万福路",manager:"市政设施管理部门",length:664,width:30.5,typeName:"悬索桥",maintenanceCategoryName:"Ⅰ类"},samples:120024,validSamples:120024,configuredDevices:24,configuredPoints:24,channelsWithData:24,channels}} }));
+  await page.route("**/report-preview-test", r => r.fulfill({contentType:"text/html",body:`<html><body><div id="root"></div><script type="module">import React from '/node_modules/.vite/deps/react.js';import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';import RefreshRuntime from '/@react-refresh';RefreshRuntime.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>type=>type;window.__vite_plugin_react_preamble_installed__=true;const {GeneratedMonitoringReport}=await import('/src/features/report/GeneratedMonitoringReport.tsx');ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(GeneratedMonitoringReport,{bridgeId:'test'}));</script></body></html>`}));
+  await page.goto("/report-preview-test");
+  await page.getByLabel("统计开始日期").fill("2026-11-04");await page.getByLabel("统计结束日期").fill("2026-11-04");
+  await page.getByRole("button",{name:"生成监测报告"}).click();await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.locator(".monitor-paper h2")).toHaveCount(7);await expect(page.locator(".monitor-paper")).toContainText("120,024");
+  await expect(page.locator(".report-appendix[open]")).toHaveCount(0);
+  await page.getByText("查看完整通道明细（24 个）").click();
+  await expect(page.locator(".report-appendix").last().locator("table")).toBeVisible();
+  await page.emulateMedia({media:"print"});
+  await expect(page.locator(".report-appendix").last()).toBeHidden();
+  await page.emulateMedia({media:"screen"});
+  await page.getByLabel("导出包含完整明细").check();
+  await page.emulateMedia({media:"print"});
+  await expect(page.locator(".report-appendix").last().locator("tbody tr")).toHaveCount(24);
+  await expect(page.locator(".report-appendix").last()).toBeVisible();
+  await page.emulateMedia({media:"screen"});
+  await page.getByLabel("导出包含完整明细").uncheck();
+  await page.screenshot({path:"../runtime/monitoring-report-preview.png"});
+  await page.setViewportSize({width:600,height:800});expect(await page.locator(".monitor-paper").evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await page.emulateMedia({media:"print"});await expect(page.locator("#root")).toBeHidden();await expect(page.locator(".monitor-report-print-host nav")).toBeHidden();await expect(page.locator(".monitor-paper")).toBeVisible();
+  await page.emulateMedia({media:"screen"});await page.getByRole("button",{name:"关闭预览"}).click();await expect(page.getByRole("dialog")).toHaveCount(0);
+});

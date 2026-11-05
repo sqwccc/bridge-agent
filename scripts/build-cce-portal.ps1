@@ -1,10 +1,19 @@
-param([string]$Tag = '20261102-cce-p18089-portal-direct')
+param([Parameter(Mandatory=$true)][string]$Tag, [switch]$UseBuiltBackend)
 $ErrorActionPreference = 'Stop'
 if ($Tag -notmatch '^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,100}$') { throw 'Invalid image tag' }
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
-$Release = Join-Path $ProjectRoot 'runtime/cce-release-20261102-p18089-portal-direct'
+$Release = Join-Path $ProjectRoot "runtime/cce-release-$Tag"
+if (Test-Path -LiteralPath $Release) { throw 'Release directory already exists; use a new tag' }
 $Context = Join-Path $Release 'build'
 New-Item -ItemType Directory -Force -Path $Context | Out-Null
+if (-not $UseBuiltBackend) {
+    Push-Location (Join-Path $ProjectRoot 'backend')
+    try {
+        & .\mvnw.cmd --batch-mode package
+        if ($LASTEXITCODE -ne 0) { throw 'Backend build/tests failed' }
+    } finally { Pop-Location }
+}
+Copy-Item -LiteralPath (Join-Path $ProjectRoot 'backend/target/bridgemind-server-1.0.0.jar') -Destination (Join-Path $Context 'application.jar')
 $PriorBase = $env:VITE_APP_BASE_PATH
 $PriorApi = $env:VITE_API_BASE_URL
 Push-Location (Join-Path $ProjectRoot 'frontend')
@@ -28,6 +37,8 @@ Get-ChildItem -LiteralPath (Join-Path $ProjectRoot 'frontend/dist') | ForEach-Ob
 $Dockerfile = @'
 FROM bridgemind:20261028-cce-manualsql-p18089
 USER root
+RUN rm -rf /app/html && mkdir -p /app/html
+COPY application.jar /app/application.jar
 COPY html/ /app/html/
 COPY nginx.conf /etc/nginx/nginx.conf
 RUN sed -i 's|^SOURCE_DB_URL=.*|SOURCE_DB_URL=jdbc:postgresql://3.141.179.64:5432/qiaoliang_db?currentSchema=qiaoliang|' /app/production-defaults.env

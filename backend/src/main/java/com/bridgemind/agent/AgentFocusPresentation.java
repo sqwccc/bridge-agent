@@ -30,6 +30,16 @@ public final class AgentFocusPresentation {
     }
     public static AgentPresentation.Visualization chart(AgentEvidence.Evidence evidence,JsonMapper json){
         var root=json.valueToTree(evidence.data());boolean plan=root.path("重点问答").asText().equals("maintenance_plan");
+        if(root.path("简版概览").asBoolean(false)) {
+            var c=root.path("监测数据覆盖");
+            var rows=List.<Map<String,Object>>of(
+                Map.of("name","接入桥梁","count",t(c,"scope_bridge_count"),"unit","座"),
+                Map.of("name","配置通道","count",t(c,"channel_count"),"unit","个"),
+                Map.of("name","有实测数据的桥梁","count",t(c,"bridges_with_readings"),"unit","座"),
+                Map.of("name","监测读数","count",t(c,"reading_count"),"unit","条"));
+            return new AgentPresentation.Visualization("table","整体数据情况（简版）",t(root,"范围说明"),"读数按本轮日期条件；档案为当前快照","巡检、病害、维修未查询；历史覆盖不代表在线",false,
+                List.of(new AgentPresentation.Series("name","项目",""),new AgentPresentation.Series("count","数量",""),new AgentPresentation.Series("unit","单位","")),rows,evidence.references());
+        }
         var rows=new ArrayList<Map<String,Object>>();var series=new ArrayList<AgentPresentation.Series>();
         if(plan){
             rows.addAll(tasks(root));
@@ -77,6 +87,19 @@ public final class AgentFocusPresentation {
     public static String answer(AgentEvidence.Evidence evidence,String question,JsonMapper json){
         var root=json.valueToTree(evidence.data());boolean plan=root.path("重点问答").asText().equals("maintenance_plan");
         var c=root.path("监测数据覆盖");var lines=new ArrayList<String>();
+        if(root.path("简版概览").asBoolean(false)) {
+            lines.add("**整体数据情况（简版）**：当前范围接入 "+t(c,"scope_bridge_count")+" 座桥梁。");
+            var cities=new ArrayList<String>();
+            for(var city:root.path("总体统计").path("cities"))cities.add(t(city,"label")+" "+t(city,"count")+" 座");
+            if(!cities.isEmpty())lines.add("- 地市分布："+String.join("、",cities)+"。");
+            lines.add("- 监测配置："+t(c,"channel_count")+" 个通道。");
+            lines.add("- 实测覆盖："+t(c,"bridges_with_readings")+" 座桥、"+t(c,"channels_with_readings")+" 个通道，共 "+t(c,"reading_count")+" 条读数；历史覆盖不代表当前在线。");
+            lines.add("- 实测起止："+t(c,"first_time")+" 至 "+t(c,"last_time")+"。");
+            lines.add("**范围**："+t(root,"范围说明"));
+            lines.add("**本轮未查询**：巡检、病害、维修总数与明细、报警及报告正文；未查询不代表没有数据。需要时可继续问“巡检情况”“主要病害”或“维修情况”。");
+            return String.join("\n\n",lines);
+        }
+
         lines.add(plan?"**养护方案（工作建议草案）**：根据当前查询范围内的病害、维修、巡检与监测资料，按下列顺序核实和编排；具体措施须在现场确认后审批，尚未创建任务。":
                 "**整体数据情况**：当前范围覆盖 "+t(c,"scope_bridge_count")+" 座桥梁，巡检 "+t(total(root,"patrols"),"count")+" 条、病害 "+t(total(root,"defects"),"count")+" 条、维修 "+t(total(root,"maintenance"),"count")+" 条、监测读数 "+t(c,"reading_count")+" 条。");
         lines.add("**范围与时间**："+t(root,"范围说明"));

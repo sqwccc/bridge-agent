@@ -1,6 +1,7 @@
 """Reuse the existing isolated image checks through a real prefix-stripping Nginx."""
 from pathlib import Path
 import sys
+import os
 
 root = Path(__file__).resolve().parents[1]
 script = root / 'scripts/verify-cce-image.py'
@@ -23,7 +24,10 @@ source = source.replace("    body = {'question': 'hello'", """    subprocess.run
         assert response.url == direct_base + '/'
     evidence['direct_access'] = 'prefixed SPA, assets, API, health, slash redirect and reload passed'
     body = {'question': 'hello'""")
-source = source.replace("'cce-image-verification.json'", "'cce-release-20261102-p18089-portal-direct/verification.json'")
+report_dir = Path(os.environ.get('CCE_VERIFICATION_DIR', str(root / 'runtime' / 'cce-portal-verification'))).resolve()
+report_dir.mkdir(parents=True, exist_ok=True)
+os.environ['CCE_VERIFICATION_DIR'] = str(report_dir)
+source = source.replace("(ROOT / 'runtime' / 'cce-image-verification.json')", "Path(" + repr(str(report_dir / 'verification.json')) + ")")
 source = source.replace("finally:\n    docker('rm'", "finally:\n    docker('rm', '-f', portal, check=False)\n    portal_config.unlink(missing_ok=True)\n    docker('rm'")
 if len(sys.argv) == 1:
     sys.argv.append('bridgemind:20261102-cce-p18089-portal-direct')

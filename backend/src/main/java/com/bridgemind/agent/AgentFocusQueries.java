@@ -17,6 +17,7 @@ import tools.jackson.core.type.TypeReference;
 @Service
 public class AgentFocusQueries {
     private final AgentMapper mapper;
+    private final com.bridgemind.ingest.MonitorReadings readings;
     // Internal SQL JSON only. Preserve raw attachment metadata for WorkRecord's derived flags;
     // the normal response mapper still honors @JsonIgnore and never exposes attachmentRaw.
     private static final JsonMapper SQL_JSON=JsonMapper.builder().disable(MapperFeature.USE_ANNOTATIONS)
@@ -24,7 +25,7 @@ public class AgentFocusQueries {
     private final ExecutorService executor = new ThreadPoolExecutor(4,4,0,TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(32),Thread.ofPlatform().daemon().name("agent-evidence-",0).factory(),
             new ThreadPoolExecutor.AbortPolicy());
-    public AgentFocusQueries(AgentMapper mapper) { this.mapper=mapper; }
+    public AgentFocusQueries(AgentMapper mapper, com.bridgemind.ingest.MonitorReadings readings) { this.mapper=mapper; this.readings=readings; }
     public record Business(List<Map<String,Object>> summary,List<WorkRecord> examples,
                            List<Map<String,Object>> groups,List<WorkRecord> candidates) {}
     public record Result(Map<String,Business> businesses,Map<String,Object> coverage) {}
@@ -33,9 +34,30 @@ public class AgentFocusQueries {
         var summary=rows.stream().filter(r->!"maintenancePriority".equals(r.get("dimension"))).toList();
         var groups=rows.stream().filter(r->"maintenancePriority".equals(r.get("dimension")))
                 .map(r->Map.of("code",r.get("code"),"count",r.get("count"))).toList();
-        List<WorkRecord> examples=SQL_JSON.readValue(snapshot.get("examples"),new TypeReference<>(){});
-        List<WorkRecord> candidates=SQL_JSON.readValue(snapshot.get("candidates"),new TypeReference<>(){});
+        List<WorkRecord> examples=decodeRecords(snapshot.get("examples"),"examples");
+        List<WorkRecord> candidates=decodeRecords(snapshot.get("candidates"),"candidates");
         return new Business(summary,examples,groups,candidates);
+    }
+    private static List<WorkRecord> decodeRecords(String payload,String section) {
+        try { return SQL_JSON.readValue(payload,new TypeReference<>(){}); }
+        catch(tools.jackson.databind.exc.InvalidFormatException e) {
+            var dateError=e.getCause();
+            while(dateError!=null && !(dateError instanceof java.time.format.DateTimeParseException))dateError=dateError.getCause();
+            if(dateError instanceof java.time.format.DateTimeParseException date) {
+                // Log only known date fields; never stringify the record, Jackson message or path keys.
+                String field="unknown";int index=-1;
+                for(var ref:e.getPath()) {
+                    if(ref.getIndex()>=0)index=ref.getIndex();
+                    if(Set.of("occurredAt","sourceUpdatedAt","rectifiedDate","occurred_at","source_updated_at","rectified_date").contains(java.util.Objects.toString(ref.getPropertyName(),"")))field=ref.getPropertyName();
+                }
+                String value=date.getParsedString();
+                String shape=value==null?"null":value.substring(0,Math.min(value.length(),80)).replaceAll("[A-Za-z]","a").replaceAll("[0-9]","d").replaceAll("[^da :+./TtZz-]","?");
+                String safeDate=!field.equals("unknown") && value!=null && value.length()<=64 && value.matches("[0-9TtZz :+./-]+")?value:"[redacted]";
+                LoggerFactory.getLogger(AgentFocusQueries.class).warn("agent date decode failed {} section={} recordIndex={} field={} targetType={} valueLength={} dateValue={} shape={} errorIndex={}",
+                    com.bridgemind.diagnostics.QueryTrace.context(),section,index,field,e.getTargetType().getSimpleName(),value==null?0:value.length(),safeDate,shape,date.getErrorIndex());
+            }
+            throw e;
+        }
     }
     static Set<String> dimensions(String kind) {
         return switch(kind) {
@@ -44,6 +66,10 @@ public class AgentFocusQueries {
             default -> Set.of("total","resultProvided");
         };
     }
+    /** Overview intentionally excludes work-record scans and JSON date decoding. */
+    public Result overview(List<String> ids,WorkFilter filter) {
+        return new Result(Map.of(),readings.coverage(ids,filter));
+    }
     public Result load(List<String> ids,WorkFilter filter,boolean maintenance) {
         var kinds=List.of("patrols","defects","maintenance");
         for(var kind:kinds) WorkService.validate(WorkKind.parse(kind),filter,1,10);
@@ -51,17 +77,17 @@ public class AgentFocusQueries {
         try {
             var business=new LinkedHashMap<String,Future<Business>>();
             for(var kind:kinds) {
-                var future=executor.submit(()->{
+                var future=executor.submit(com.bridgemind.diagnostics.QueryTrace.task("focus."+kind,()->{
                     long start=System.nanoTime();
                     var selected=new HashSet<>(dimensions(kind));
                     if(maintenance&&kind.equals("defects"))selected.add("maintenancePriority");
                     var result=decode(mapper.focusSnapshot(ids,kind,filter,selected));
                     LoggerFactory.getLogger(AgentFocusQueries.class).info("agent focus kind={} durationMs={}",kind,TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-start));
                     return result;
-                });
+                }));
                 business.put(kind,future);futures.add(future);
             }
-            var coverage=executor.submit(()->mapper.monitoringCoverage(ids,filter));futures.add(coverage);
+            var coverage=executor.submit(com.bridgemind.diagnostics.QueryTrace.task("focus.monitoringCoverage",()->readings.coverage(ids,filter)));futures.add(coverage);
             var results=new LinkedHashMap<String,Business>();
             for(var entry:business.entrySet()) results.put(entry.getKey(),entry.getValue().get());
             return new Result(results,coverage.get());

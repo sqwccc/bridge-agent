@@ -64,6 +64,7 @@ public class DataSourceConfig {
         config.setMapUnderscoreToCamelCase(true);
         config.setCallSettersOnNulls(true);
         config.setDefaultStatementTimeout(15);
+        config.addInterceptor(new com.bridgemind.diagnostics.QueryTraceInterceptor(location.contains("source")?"SOURCE_DB":"APP_DB"));
         bean.setConfiguration(config);
         return bean.getObject();
     }

@@ -118,9 +118,10 @@ public class AgentEvidence {
                 if (topic.equals("quality")) data.put("评价质量口径", "其他包括缺失、编码异常、养护类别冲突；只汇总档案评价完整性，不是全库数据质量审计。清单是当前筛选下前20座，不能声称列出了全部问题桥梁。");
             }
         }
-        var kinds = focus?List.of("patrols","defects","maintenance"):topic.equals("overview") && bridgeId != null ? List.of("defects","maintenance") :
+        boolean compact=topic.equals("data_overview");
+        var kinds = compact?List.<String>of():focus?List.of("patrols","defects","maintenance"):topic.equals("overview") && bridgeId != null ? List.of("defects","maintenance") :
                 Set.of("patrols","defects","maintenance").contains(topic) ? List.of(topic) : List.<String>of();
-        var focused=focus?focusQueries.load(focusedIds,plan.workFilter(),topic.equals("maintenance_plan")):null;
+        var focused=focus?(compact?focusQueries.overview(focusedIds,plan.workFilter()):focusQueries.load(focusedIds,plan.workFilter(),true)):null;
         if (!kinds.isEmpty()) {
             var ids = focus?focusedIds:bridgeId != null ? List.of(bridgeId) : bridges.all(filter).stream().map(b -> b.id()).toList();
             for (String kind : kinds) {
@@ -163,6 +164,11 @@ public class AgentEvidence {
                 for(var c:candidates)refs.add(new Reference("E"+(refs.size()+1),c.bridgeName()+" · 养护核查候选 · "+c.id(),"/bridges/"+path(c.bridgeId())+"/records?kind=defects&q="+path(c.id())));
             }
             data.put("综合查询边界","本轮覆盖档案/评价、巡检、病害、维修、监测配置及历史读数覆盖。没有检索历史报警明细或报告正文，不能将其描述为零或正常。病害状态是来源记录状态；维修记录多或编号匹配都不能直接证明闭环。");
+            if(compact) {
+                data.put("简版概览",true);
+                data.put("综合查询边界","本轮仅查询桥梁档案、评价和监测数据覆盖；巡检、病害、维修总数及明细、报警和报告正文未查询，不表示为零或正常。可通过巡检情况、主要病害、维修情况专题继续查询。");
+                data.put("输出要求","简短回答桥梁范围、监测配置和读数覆盖，最多4条依据；说明未查询业务记录，不推测巡检、病害、维修总数。");
+            }
         }
         if (topic.equals("alarms")) {
             var wf=plan.workFilter();

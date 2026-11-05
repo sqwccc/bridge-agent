@@ -163,7 +163,7 @@ export function BridgeAgent({
       ...items.slice(-29),
       { id, question: text, answer: "", status: "正在连接…" },
     ]);
-    const timeout = setTimeout(() => abort.abort("timeout"), 190000);
+    const timeout = setTimeout(() => abort.abort("timeout"), 490000);
     try {
       await streamAgent(
         {
